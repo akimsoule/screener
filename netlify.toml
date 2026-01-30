@@ -1,0 +1,10 @@
+[build]
+  publish = "dist"
+  functions = "netlify/functions"
+
+[dev]
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  external_node_modules = ["yahoo-finance2"]

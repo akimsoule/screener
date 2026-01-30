@@ -1,0 +1,42 @@
+{
+  "name": "screener",
+  "version": "1.0.0",
+  "description": "A serverless Netlify project for screener",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "dev:netlify": "netlify dev",
+    "build": "tsc && vite build",
+    "build:netlify": "netlify build",
+    "deploy": "netlify deploy --prod",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "netlify",
+    "serverless",
+    "screener",
+    "typescript"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@netlify/functions": "^5.1.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "technicalindicators": "^3.1.0",
+    "yahoo-finance2": "^3.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
+    "autoprefixer": "^10.4.23",
+    "netlify-cli": "^17.0.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.0.0",
+    "vite": "^7.3.1"
+  }
+}
