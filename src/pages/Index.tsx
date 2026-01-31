@@ -7,7 +7,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Watchlist } from "@/components/stock/Watchlist";
 import type { WatchlistItem } from "@/types/stock";
 import { useToast } from "@/hooks/use-toast";
-import { getQuote, addSymbol, getSymbols } from "@/lib/netlifyApi";
+import { getQuote, addSymbol, getSymbols, getFilters } from "@/lib/netlifyApi";
 
 const WATCHLIST_KEY = "stock-watchlist";
 
@@ -204,19 +204,27 @@ export default function Index() {
     [toast],
   );
 
-  // Available sectors derived from the watchlist items
-  const availableSectors = Array.from(
-    new Set(watchlist.map((w) => (w as any).sector).filter(Boolean)),
-  ) as string[];
-  const availableIndustries = Array.from(
-    new Set(watchlist.map((w) => (w as any).industry).filter(Boolean)),
-  ) as string[];
-  const availableExchanges = Array.from(
-    new Set(watchlist.map((w) => (w as any).exchange).filter(Boolean)),
-  ) as string[];
-  const availableTypes = Array.from(
-    new Set(watchlist.map((w) => (w as any).type).filter(Boolean)),
-  ) as string[];
+  // Available filters (loaded from server)
+  const [availableSectors, setAvailableSectors] = useState<string[]>([]);
+  const [availableIndustries, setAvailableIndustries] = useState<string[]>([]);
+  const [availableExchanges, setAvailableExchanges] = useState<string[]>([]);
+  const [availableTypes, setAvailableTypes] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadFilters = async () => {
+      try {
+        const res = await getFilters();
+        setAvailableSectors(res.sectors || []);
+        setAvailableIndustries(res.industries || []);
+        setAvailableExchanges(res.exchanges || []);
+        setAvailableTypes(res.types || []);
+      } catch (err) {
+        console.error("Failed to load filters:", err);
+      }
+    };
+
+    loadFilters();
+  }, []);
 
   // Pagination logic
   const filteredWatchlist = watchlist.filter((item) => {

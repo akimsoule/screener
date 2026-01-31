@@ -28,6 +28,12 @@ export async function searchSymbols(query: string) {
   return res.json();
 }
 
+export async function getFilters() {
+  const res = await fetch(`${API_PREFIX}/filters`);
+  if (!res.ok) throw new Error(`filters fetch failed: ${res.status}`);
+  return res.json();
+}
+
 export async function addSymbol(name: string, enabled = true) {
   const res = await fetch(`${API_PREFIX}/symbols`, {
     method: "POST",
