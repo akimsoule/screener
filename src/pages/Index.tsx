@@ -231,28 +231,33 @@ export default function Index() {
     const matchesSearch =
       item.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.name.toLowerCase().includes(searchTerm.toLowerCase());
-    // OR semantics within each filter set. Across different filter groups apply AND (i.e. must match all active groups).
+
+    // OR within each group (multiple chips in same group),
+    // OR across groups: if any group has selections, include items matching at least one group.
     const sector = (item as any).sector || "Unknown";
     const industry = (item as any).industry || "Unknown";
     const exchange = (item as any).exchange || "Unknown";
     const type = (item as any).type || "Unknown";
 
-    const matchesSector =
-      selectedSectors.length === 0 || selectedSectors.includes(sector);
-    const matchesIndustry =
-      selectedIndustries.length === 0 || selectedIndustries.includes(industry);
-    const matchesExchange =
-      selectedExchanges.length === 0 || selectedExchanges.includes(exchange);
-    const matchesType =
-      selectedTypes.length === 0 || selectedTypes.includes(type);
+    const anyFilterSelected =
+      selectedSectors.length > 0 ||
+      selectedIndustries.length > 0 ||
+      selectedExchanges.length > 0 ||
+      selectedTypes.length > 0;
 
-    return (
-      matchesSearch &&
-      matchesSector &&
-      matchesIndustry &&
-      matchesExchange &&
-      matchesType
-    );
+    const matchesAnyGroup = (() => {
+      if (!anyFilterSelected) return true;
+      const okSector =
+        selectedSectors.length > 0 && selectedSectors.includes(sector);
+      const okIndustry =
+        selectedIndustries.length > 0 && selectedIndustries.includes(industry);
+      const okExchange =
+        selectedExchanges.length > 0 && selectedExchanges.includes(exchange);
+      const okType = selectedTypes.length > 0 && selectedTypes.includes(type);
+      return okSector || okIndustry || okExchange || okType;
+    })();
+
+    return matchesSearch && matchesAnyGroup;
   });
   const totalPages = Math.ceil(filteredWatchlist.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;

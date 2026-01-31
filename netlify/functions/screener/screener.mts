@@ -63,7 +63,9 @@ export default async function handler(request: Request, context: Context) {
       const meta = metaByName[name] || {};
 
       const check = (values: string[], field?: string) => {
-        if (!values.length) return true;
+        // For OR-across-groups semantics we treat an inactive group as not contributing (false),
+        // and only active groups can satisfy the check.
+        if (!values.length) return false;
         const v = (meta[field || ""] || "") as string;
         if (!v) return false;
         // compare case-insensitive
@@ -75,7 +77,8 @@ export default async function handler(request: Request, context: Context) {
       const okExchange = check(exchanges, "exchange");
       const okType = check(types, "type");
 
-      return okSector && okIndustry && okExchange && okType;
+      // OR across groups: an item is included if it matches any active group
+      return okSector || okIndustry || okExchange || okType;
     });
 
     const total = filtered.length;
