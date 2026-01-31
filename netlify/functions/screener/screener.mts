@@ -6,7 +6,7 @@ export default async function handler(request: Request, context: Context) {
   try {
     const url = new URL(request.url);
     const page = Math.max(1, Number(url.searchParams.get("page") || "1"));
-    const limit = Math.max(1, Number(url.searchParams.get("limit") || "10"));
+    const limit = Math.max(1, Number(url.searchParams.get("limit") || "20"));
 
     const result = await runAnalysis();
     const allReports = result.reports || [];
