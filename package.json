@@ -7,6 +7,8 @@
     "dev": "netlify dev",
     "start": "vite",
     "build": "prisma generate && vite build",
+    "seed": "tsx prisma/seed.ts",
+    "build:full": "npm install && npm run build && npx prisma migrate deploy && npx prisma generate && npm run seed",
     "lint": "eslint .",
     "preview": "vite preview"
   },
