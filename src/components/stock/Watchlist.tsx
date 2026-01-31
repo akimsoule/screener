@@ -8,7 +8,12 @@ import {
   Trash,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { deleteSymbol } from "@/lib/netlifyApi";
+import {
+  deleteSymbol,
+  searchSymbols,
+  runScreenerWithPage,
+  runScreener,
+} from "@/lib/netlifyApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +56,10 @@ export function Watchlist({
   onPageChange,
 }: WatchlistProps) {
   const [newSymbol, setNewSymbol] = useState("");
+  const [suggestions, setSuggestions] = useState<
+    { symbol: string; name?: string }[]
+  >([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [reports, setReports] = useState<AnalysisReport[]>([]);
   const [reportsTotal, setReportsTotal] = useState(0);
   const [loadingReports, setLoadingReports] = useState(true);
@@ -82,23 +91,18 @@ export function Watchlist({
     const loadReports = async () => {
       setLoadingReports(true);
       try {
-        const api = await import("@/lib/netlifyApi");
-
         const isSearching = searchTerm.trim().length > 0;
 
         if (!isSearching) {
           // Normal mode: fetch only the current page from server
-          const body = await api.runScreenerWithPage(
-            currentPage,
-            reportsPerPage,
-          );
+          const body = await runScreenerWithPage(currentPage, reportsPerPage);
           setReports(body.reports || []);
           setReportsTotal(body.total || 0);
           return;
         }
 
         // Search mode: fetch all pages from server then filter client-side
-        const first = await api.runScreenerWithPage(1, reportsPerPage);
+        const first = await runScreenerWithPage(1, reportsPerPage);
         const total = first.total || 0;
         const totalPages = Math.max(1, Math.ceil(total / reportsPerPage));
 
@@ -106,7 +110,7 @@ export function Watchlist({
 
         const promises = [];
         for (let p = 2; p <= totalPages; p++) {
-          promises.push(api.runScreenerWithPage(p, reportsPerPage));
+          promises.push(runScreenerWithPage(p, reportsPerPage));
         }
 
         if (promises.length > 0) {
@@ -136,6 +140,35 @@ export function Watchlist({
     }
   };
 
+  // fetch suggestions from server when typing (debounced)
+  useEffect(() => {
+    const q = newSymbol.trim();
+    if (q.length === 0) {
+      setSuggestions([]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setLoadingSuggestions(true);
+        const res = await searchSymbols(q);
+        if (cancelled) return;
+        setSuggestions((res && res.suggestions) || []);
+      } catch (err) {
+        console.error("Failed to fetch suggestions:", err);
+        setSuggestions([]);
+      } finally {
+        setLoadingSuggestions(false);
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [newSymbol]);
+
   const handleRefresh = async () => {
     try {
       // call existing prop so parent can react
@@ -145,7 +178,7 @@ export function Watchlist({
     }
 
     try {
-      const body = await (await import("@/lib/netlifyApi")).runScreener();
+      const body = await runScreener();
       const fetchedReports = body.reports || [];
       setReports(fetchedReports);
     } catch (err) {
@@ -168,16 +201,54 @@ export function Watchlist({
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        <form onSubmit={handleAdd} className="flex gap-2">
-          <Input
-            value={newSymbol}
-            onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-            placeholder="Add symbol"
-            className="bg-secondary border-border font-mono uppercase"
-          />
-          <Button type="submit" size="icon" disabled={!newSymbol.trim()}>
-            <Plus className="h-4 w-4" />
-          </Button>
+        <form onSubmit={handleAdd} className="relative">
+          <div className="flex gap-2">
+            <Input
+              value={newSymbol}
+              onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
+              placeholder="Add symbol"
+              className="bg-secondary border-border font-mono uppercase"
+              aria-autocomplete="list"
+              aria-haspopup="listbox"
+            />
+            <Button type="submit" size="icon" disabled={!newSymbol.trim()}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* suggestions dropdown */}
+          {((suggestions && suggestions.length > 0) || loadingSuggestions) && (
+            <div className="absolute left-0 right-0 mt-1 z-50 bg-popover border border-border rounded-md shadow-lg">
+              {loadingSuggestions ? (
+                <div className="p-2 text-sm text-muted-foreground">
+                  Recherche...
+                </div>
+              ) : (
+                <ul role="listbox" className="max-h-56 overflow-auto">
+                  {suggestions.map((s) => (
+                    <li
+                      key={s.symbol}
+                      role="option"
+                      className="px-3 py-2 hover:bg-secondary cursor-pointer flex justify-between items-center"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        // fill input with selected symbol
+                        setNewSymbol(s.symbol);
+                        // optionally add immediately
+                        // onAdd(s.symbol);
+                        setSuggestions([]);
+                      }}
+                    >
+                      <div className="font-mono">{s.symbol}</div>
+                      <div className="text-xs text-muted-foreground truncate ml-2">
+                        {s.name}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </form>
       </CardContent>
 
@@ -328,10 +399,8 @@ export function Watchlist({
 
                                         try {
                                           // Re-fetch current page reports to ensure UI is consistent
-                                          const api =
-                                            await import("@/lib/netlifyApi");
                                           const body =
-                                            await api.runScreenerWithPage(
+                                            await runScreenerWithPage(
                                               currentPage,
                                               reportsPerPage,
                                             );

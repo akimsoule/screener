@@ -21,6 +21,13 @@ export async function getSymbols() {
   return res.json();
 }
 
+export async function searchSymbols(query: string) {
+  const params = new URLSearchParams({ q: query });
+  const res = await fetch(`${API_PREFIX}/suggest?${params.toString()}`);
+  if (!res.ok) throw new Error(`suggest fetch failed: ${res.status}`);
+  return res.json();
+}
+
 export async function addSymbol(name: string, enabled = true) {
   const res = await fetch(`${API_PREFIX}/symbols`, {
     method: "POST",
