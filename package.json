@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "seed": "tsx prisma/seed.ts",
+    "dev": "netlify dev",
+    "start": "vite",
+    "build": "prisma generate && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
