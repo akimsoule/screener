@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { List, TrendingUp } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TrendingUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Watchlist } from "@/components/stock/Watchlist";
 import type { WatchlistItem } from "@/types/stock";
@@ -13,14 +14,20 @@ const WATCHLIST_KEY = "stock-watchlist";
 export default function Index() {
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState("watchlist");
-
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
   // Search
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Sector filters (clickable chips)
+  // Filters (clickable chips)
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(false);
+  const [selectedSectors, setSelectedSectors] = useState<string[]>([]);
+  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
+  const [selectedExchanges, setSelectedExchanges] = useState<string[]>([]);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
 
   // Watchlist
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>(() => {
@@ -37,18 +44,28 @@ export default function Index() {
   useEffect(() => {
     const loadWatchlistData = async () => {
       if (watchlist.length === 0) return;
-
       try {
+        // Fetch symbol metadata from server (enriched DB rows)
+        const symbols = await getSymbols();
+        const metaByName = new Map<string, any>();
+        symbols.forEach((s: any) => metaByName.set(s.name.toUpperCase(), s));
+
         const updatedItems = await Promise.all(
           watchlist.map(async (item) => {
             try {
               const quote = await getQuote(item.symbol);
+              const meta = metaByName.get(item.symbol.toUpperCase());
               return {
                 ...item,
                 name: quote.name || item.name,
                 price: quote.price || item.price,
                 change: quote.change || item.change,
                 changePercent: quote.changePercent || item.changePercent,
+                // merge enrichment fields from server if available
+                sector: (item as any).sector || meta?.sector || null,
+                industry: (item as any).industry || meta?.industry || null,
+                exchange: (item as any).exchange || meta?.exchange || null,
+                type: (item as any).type || meta?.type || null,
               };
             } catch (error) {
               console.error(`Failed to load data for ${item.symbol}:`, error);
@@ -132,6 +149,10 @@ export default function Index() {
 
         // Récupérer les données du symbole depuis l'API
         const quote = await getQuote(symbol);
+        // Récupérer métadonnées du symbole depuis la liste serveur (réutilise `symbols` récupéré plus haut)
+        const meta = symbols.find(
+          (s: any) => s.name === symbol || s.name === symbol.toUpperCase(),
+        );
 
         const newItem: WatchlistItem = {
           symbol,
@@ -140,7 +161,11 @@ export default function Index() {
           change: quote.change || 0,
           changePercent: quote.changePercent || 0,
           addedAt: new Date().toISOString(),
-        };
+          sector: meta?.sector || null,
+          industry: meta?.industry || null,
+          exchange: meta?.exchange || null,
+          type: meta?.type || null,
+        } as any;
 
         setWatchlist((prev) => [...prev, newItem]);
 
@@ -151,6 +176,11 @@ export default function Index() {
           title: "Added to watchlist",
           description: `${symbol} has been added to your watchlist`,
         });
+
+        // Rafraîchir la page après un délai pour laisser le temps au toast de s'afficher
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
       } catch (error) {
         console.error(`Failed to add ${symbol} to watchlist:`, error);
         toast({
@@ -174,12 +204,48 @@ export default function Index() {
     [toast],
   );
 
+  // Available sectors derived from the watchlist items
+  const availableSectors = Array.from(
+    new Set(watchlist.map((w) => (w as any).sector).filter(Boolean)),
+  ) as string[];
+  const availableIndustries = Array.from(
+    new Set(watchlist.map((w) => (w as any).industry).filter(Boolean)),
+  ) as string[];
+  const availableExchanges = Array.from(
+    new Set(watchlist.map((w) => (w as any).exchange).filter(Boolean)),
+  ) as string[];
+  const availableTypes = Array.from(
+    new Set(watchlist.map((w) => (w as any).type).filter(Boolean)),
+  ) as string[];
+
   // Pagination logic
-  const filteredWatchlist = watchlist.filter(
-    (item) =>
+  const filteredWatchlist = watchlist.filter((item) => {
+    const matchesSearch =
       item.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+      item.name.toLowerCase().includes(searchTerm.toLowerCase());
+    // OR semantics within each filter set. Across different filter groups apply AND (i.e. must match all active groups).
+    const sector = (item as any).sector || "Unknown";
+    const industry = (item as any).industry || "Unknown";
+    const exchange = (item as any).exchange || "Unknown";
+    const type = (item as any).type || "Unknown";
+
+    const matchesSector =
+      selectedSectors.length === 0 || selectedSectors.includes(sector);
+    const matchesIndustry =
+      selectedIndustries.length === 0 || selectedIndustries.includes(industry);
+    const matchesExchange =
+      selectedExchanges.length === 0 || selectedExchanges.includes(exchange);
+    const matchesType =
+      selectedTypes.length === 0 || selectedTypes.includes(type);
+
+    return (
+      matchesSearch &&
+      matchesSector &&
+      matchesIndustry &&
+      matchesExchange &&
+      matchesType
+    );
+  });
   const totalPages = Math.ceil(filteredWatchlist.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
@@ -188,6 +254,39 @@ export default function Index() {
   const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page);
   }, []);
+
+  // Toggle a sector in selectedSectors (OR semantics)
+  const toggleSector = (sector: string) => {
+    setSelectedSectors((prev) => {
+      if (prev.includes(sector)) return prev.filter((s) => s !== sector);
+      return [...prev, sector];
+    });
+    setCurrentPage(1);
+  };
+
+  const toggleIndustry = (industry: string) => {
+    setSelectedIndustries((prev) => {
+      if (prev.includes(industry)) return prev.filter((s) => s !== industry);
+      return [...prev, industry];
+    });
+    setCurrentPage(1);
+  };
+
+  const toggleExchange = (exchange: string) => {
+    setSelectedExchanges((prev) => {
+      if (prev.includes(exchange)) return prev.filter((s) => s !== exchange);
+      return [...prev, exchange];
+    });
+    setCurrentPage(1);
+  };
+
+  const toggleType = (t: string) => {
+    setSelectedTypes((prev) => {
+      if (prev.includes(t)) return prev.filter((s) => s !== t);
+      return [...prev, t];
+    });
+    setCurrentPage(1);
+  };
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6">
@@ -209,45 +308,208 @@ export default function Index() {
         </header>
 
         {/* Main Content */}
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="space-y-6"
-        >
-          <TabsList className="bg-secondary">
-            <TabsTrigger value="watchlist" className="gap-2">
-              <List className="h-4 w-4" />
-              Watchlist
-            </TabsTrigger>
-          </TabsList>
+        <div className="space-y-6 w-full">
+          <Input
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="Rechercher par symbole ou nom..."
+            className="bg-secondary border-border"
+          />
 
-          <TabsContent value="watchlist" className="mt-0">
-            <div className="space-y-6 w-full">
-              <Input
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1); // Reset to first page when searching
+          {/* Filter collapse */}
+          <div className="mt-2 mb-2">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium">Filters</div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (filtersOpen) {
+                    setSelectedSectors([]);
+                    setSelectedIndustries([]);
+                    setSelectedExchanges([]);
+                    setSelectedTypes([]);
+                  }
+                  setFiltersOpen((v) => !v);
                 }}
-                placeholder="Rechercher par symbole ou nom..."
-                className="bg-secondary border-border"
-              />
-              <Watchlist
-                items={paginatedItems}
-                searchTerm={searchTerm}
-                onAdd={handleAddToWatchlist}
-                onRemove={handleRemoveFromWatchlist}
-                onSelect={() => {}}
-                onRefresh={handleRefreshWatchlist}
-                loading={false}
-                currentPage={currentPage}
-                totalPages={totalPages}
-                totalItems={filteredWatchlist.length}
-                onPageChange={handlePageChange}
-              />
+                aria-expanded={filtersOpen}
+                aria-controls="filters-panel"
+                className="flex items-center gap-2"
+              >
+                {filtersOpen ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+                {filtersOpen ? "Hide filters" : "Show filters"}
+              </Button>
             </div>
-          </TabsContent>
-        </Tabs>
+            {filtersOpen && (
+              <div id="filters-panel" className="flex flex-col gap-4">
+                {/* Sectors */}
+                <div className="flex gap-2 items-center flex-wrap w-full">
+                  <div className="text-sm font-medium mr-2">Sector:</div>
+                  {availableSectors.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">
+                      No sectors
+                    </div>
+                  ) : (
+                    availableSectors.map((sector) => {
+                      const active = selectedSectors.includes(sector);
+                      return (
+                        <button
+                          key={sector}
+                          onClick={() => toggleSector(sector)}
+                          className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                            active
+                              ? "bg-primary text-white border-primary"
+                              : "bg-secondary text-muted-foreground border-border"
+                          }`}
+                        >
+                          {sector}
+                        </button>
+                      );
+                    })
+                  )}
+                  {selectedSectors.length > 0 && (
+                    <button
+                      onClick={() => setSelectedSectors([])}
+                      className="px-3 py-1 rounded-full text-sm border bg-transparent text-muted-foreground"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Industries */}
+                <div className="flex gap-2 items-center flex-wrap w-full">
+                  <div className="text-sm font-medium mr-2">Industry:</div>
+                  {availableIndustries.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">
+                      No industries
+                    </div>
+                  ) : (
+                    availableIndustries.map((industry) => {
+                      const active = selectedIndustries.includes(industry);
+                      return (
+                        <button
+                          key={industry}
+                          onClick={() => toggleIndustry(industry)}
+                          className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                            active
+                              ? "bg-primary text-white border-primary"
+                              : "bg-secondary text-muted-foreground border-border"
+                          }`}
+                        >
+                          {industry}
+                        </button>
+                      );
+                    })
+                  )}
+                  {selectedIndustries.length > 0 && (
+                    <button
+                      onClick={() => setSelectedIndustries([])}
+                      className="px-3 py-1 rounded-full text-sm border bg-transparent text-muted-foreground"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Exchanges */}
+                <div className="flex gap-2 items-center flex-wrap w-full">
+                  <div className="text-sm font-medium mr-2">Exchange:</div>
+                  {availableExchanges.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">
+                      No exchanges
+                    </div>
+                  ) : (
+                    availableExchanges.map((exchange) => {
+                      const active = selectedExchanges.includes(exchange);
+                      return (
+                        <button
+                          key={exchange}
+                          onClick={() => toggleExchange(exchange)}
+                          className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                            active
+                              ? "bg-primary text-white border-primary"
+                              : "bg-secondary text-muted-foreground border-border"
+                          }`}
+                        >
+                          {exchange}
+                        </button>
+                      );
+                    })
+                  )}
+                  {selectedExchanges.length > 0 && (
+                    <button
+                      onClick={() => setSelectedExchanges([])}
+                      className="px-3 py-1 rounded-full text-sm border bg-transparent text-muted-foreground"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Types */}
+                <div className="flex gap-2 items-center flex-wrap w-full">
+                  <div className="text-sm font-medium mr-2">Type:</div>
+                  {availableTypes.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">
+                      No types
+                    </div>
+                  ) : (
+                    availableTypes.map((t) => {
+                      const active = selectedTypes.includes(t);
+                      return (
+                        <button
+                          key={t}
+                          onClick={() => toggleType(t)}
+                          className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                            active
+                              ? "bg-primary text-white border-primary"
+                              : "bg-secondary text-muted-foreground border-border"
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      );
+                    })
+                  )}
+                  {selectedTypes.length > 0 && (
+                    <button
+                      onClick={() => setSelectedTypes([])}
+                      className="px-3 py-1 rounded-full text-sm border bg-transparent text-muted-foreground"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Watchlist
+            items={paginatedItems}
+            searchTerm={searchTerm}
+            onAdd={handleAddToWatchlist}
+            onRemove={handleRemoveFromWatchlist}
+            onSelect={() => {}}
+            onRefresh={handleRefreshWatchlist}
+            loading={false}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredWatchlist.length}
+            onPageChange={handlePageChange}
+            sectors={selectedSectors}
+            industries={selectedIndustries}
+            exchanges={selectedExchanges}
+            types={selectedTypes}
+          />
+        </div>
       </div>
     </div>
   );

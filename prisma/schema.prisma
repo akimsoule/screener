@@ -16,6 +16,11 @@ model Symbol {
   id        String   @id @default(cuid())
   name      String   @unique
   enabled   Boolean  @default(true)
+  // Optional enrichment fields from Yahoo (sector, industry, exchange, type)
+  sector    String?
+  industry  String?
+  exchange  String?
+  type      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

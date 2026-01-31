@@ -43,4 +43,42 @@ export async function fetchQuote(symbol: string) {
   };
 }
 
-export default { fetchChart, fetchCloses, fetchQuote };
+export async function fetchSuggestions(query: string) {
+  const yahooUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
+    query,
+  )}&quotesCount=10&newsCount=0`;
+
+  const res = await fetch(yahooUrl, {
+    headers: { "User-Agent": "Mozilla/5.0" },
+  });
+  if (!res.ok) throw new Error(`Yahoo Finance API error: ${res.status}`);
+  const data = await res.json();
+  const quotes = data.quotes || [];
+  const suggestions = quotes.map((q: any) => ({
+    symbol: q.symbol,
+    name: q.shortname || q.longname || q.exchange || "",
+    exchange: q.exchange,
+    type: q.typeDisp || q.type || "",
+    industry: q.industry || "",
+    sector: q.sector || "",
+  }));
+  return suggestions;
+}
+
+export async function fetchSymbolDetails(symbol: string) {
+  const suggestions = await fetchSuggestions(symbol);
+  return (
+    suggestions.find(
+      (s: { symbol: string }) =>
+        s.symbol.toUpperCase() === symbol.toUpperCase(),
+    ) || null
+  );
+}
+
+export default {
+  fetchChart,
+  fetchCloses,
+  fetchQuote,
+  fetchSuggestions,
+  fetchSymbolDetails,
+};

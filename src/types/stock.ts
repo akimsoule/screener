@@ -27,6 +27,10 @@ export interface WatchlistItem {
   change: number;
   changePercent: number;
   addedAt: string;
+  sector?: string | null;
+  industry?: string | null;
+  exchange?: string | null;
+  type?: string | null;
 }
 
 export interface StockIndicators {

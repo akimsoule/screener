@@ -12,7 +12,6 @@ import {
   deleteSymbol,
   searchSymbols,
   runScreenerWithPage,
-  runScreener,
 } from "@/lib/netlifyApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +39,11 @@ interface WatchlistProps {
   totalPages?: number;
   totalItems?: number;
   onPageChange?: (page: number) => void;
+  // Optional filters propagated from parent
+  sectors?: string[];
+  industries?: string[];
+  exchanges?: string[];
+  types?: string[];
 }
 
 export function Watchlist({
@@ -54,6 +58,11 @@ export function Watchlist({
   totalPages = 1,
   totalItems = 0,
   onPageChange,
+  // Optional filters propagated from parent
+  sectors = [],
+  industries = [],
+  exchanges = [],
+  types = [],
 }: WatchlistProps) {
   const [newSymbol, setNewSymbol] = useState("");
   const [suggestions, setSuggestions] = useState<
@@ -95,14 +104,24 @@ export function Watchlist({
 
         if (!isSearching) {
           // Normal mode: fetch only the current page from server
-          const body = await runScreenerWithPage(currentPage, reportsPerPage);
+          const body = await runScreenerWithPage(currentPage, reportsPerPage, {
+            sectors,
+            industries,
+            exchanges,
+            types,
+          });
           setReports(body.reports || []);
           setReportsTotal(body.total || 0);
           return;
         }
 
         // Search mode: fetch all pages from server then filter client-side
-        const first = await runScreenerWithPage(1, reportsPerPage);
+        const first = await runScreenerWithPage(1, reportsPerPage, {
+          sectors,
+          industries,
+          exchanges,
+          types,
+        });
         const total = first.total || 0;
         const totalPages = Math.max(1, Math.ceil(total / reportsPerPage));
 
@@ -110,7 +129,14 @@ export function Watchlist({
 
         const promises = [];
         for (let p = 2; p <= totalPages; p++) {
-          promises.push(runScreenerWithPage(p, reportsPerPage));
+          promises.push(
+            runScreenerWithPage(p, reportsPerPage, {
+              sectors,
+              industries,
+              exchanges,
+              types,
+            }),
+          );
         }
 
         if (promises.length > 0) {
@@ -130,7 +156,7 @@ export function Watchlist({
     };
 
     loadReports();
-  }, [currentPage, searchTerm]);
+  }, [currentPage, searchTerm, sectors, industries, exchanges, types]);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,9 +204,15 @@ export function Watchlist({
     }
 
     try {
-      const body = await runScreener();
+      const body = await runScreenerWithPage(1, reportsPerPage, {
+        sectors,
+        industries,
+        exchanges,
+        types,
+      });
       const fetchedReports = body.reports || [];
       setReports(fetchedReports);
+      setReportsTotal(body.total || 0);
     } catch (err) {
       console.error("Failed to fetch screener:", err);
     }
@@ -403,6 +435,12 @@ export function Watchlist({
                                             await runScreenerWithPage(
                                               currentPage,
                                               reportsPerPage,
+                                              {
+                                                sectors,
+                                                industries,
+                                                exchanges,
+                                                types,
+                                              },
                                             );
                                           const fetched = body.reports || [];
                                           setReports(fetched);

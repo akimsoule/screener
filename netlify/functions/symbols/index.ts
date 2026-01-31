@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma";
+import { fetchSymbolDetails } from "../lib/yahoo";
 
 export default async function handler(request: Request) {
   try {
@@ -7,7 +8,33 @@ export default async function handler(request: Request) {
 
     if (method === "GET") {
       const symbols = await prisma.symbol.findMany();
-      return new Response(JSON.stringify(symbols), {
+
+      // Enrich symbols with details (sector, industry, exchange, type) from Yahoo
+      const enriched = await Promise.all(
+        symbols.map(async (s) => {
+          try {
+            const details = await fetchSymbolDetails(s.name);
+            return {
+              ...s,
+              sector: details?.sector || null,
+              industry: details?.industry || null,
+              exchange: details?.exchange || null,
+              type: details?.type || null,
+            };
+          } catch (err) {
+            console.error(`Failed to fetch details for ${s.name}:`, err);
+            return {
+              ...s,
+              sector: null,
+              industry: null,
+              exchange: null,
+              type: null,
+            };
+          }
+        }),
+      );
+
+      return new Response(JSON.stringify(enriched), {
         status: 200,
         headers: {
           "Content-Type": "application/json",

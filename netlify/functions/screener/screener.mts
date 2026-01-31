@@ -1,5 +1,6 @@
 import type { Context } from "@netlify/functions";
 import runAnalysis from "../app/index";
+import { prisma } from "../lib/prisma";
 
 export default async function handler(request: Request, context: Context) {
   try {
@@ -9,12 +10,80 @@ export default async function handler(request: Request, context: Context) {
 
     const result = await runAnalysis();
     const allReports = result.reports || [];
-    const total = allReports.length;
+    // Parse filters from query params (comma-separated lists)
+    const parseList = (key: string) => {
+      const v = url.searchParams.get(key);
+      if (!v) return [] as string[];
+      return v
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    };
+
+    const sectors = parseList("sector");
+    const industries = parseList("industry");
+    const exchanges = parseList("exchange");
+    const types = parseList("type");
+
+    // If any filters are present, load symbol metadata from the DB to apply server-side filtering
+    let metaByName: Record<string, any> = {};
+    if (
+      sectors.length ||
+      industries.length ||
+      exchanges.length ||
+      types.length
+    ) {
+      const names = Array.from(
+        new Set(allReports.map((r: any) => (r.symbol || "").toUpperCase())),
+      ).filter(Boolean);
+      const rows = await prisma.symbol.findMany({
+        where: { name: { in: names } },
+        select: {
+          name: true,
+          sector: true,
+          industry: true,
+          exchange: true,
+          type: true,
+        },
+      });
+      rows.forEach((row) => {
+        metaByName[row.name.toUpperCase()] = row;
+      });
+    }
+    // Apply server-side filters (OR within group, AND across groups)
+    const filtered = allReports.filter((r: any) => {
+      if (
+        !sectors.length &&
+        !industries.length &&
+        !exchanges.length &&
+        !types.length
+      )
+        return true;
+      const name = (r.symbol || "").toUpperCase();
+      const meta = metaByName[name] || {};
+
+      const check = (values: string[], field?: string) => {
+        if (!values.length) return true;
+        const v = (meta[field || ""] || "") as string;
+        if (!v) return false;
+        // compare case-insensitive
+        return values.some((s) => s.toUpperCase() === v.toUpperCase());
+      };
+
+      const okSector = check(sectors, "sector");
+      const okIndustry = check(industries, "industry");
+      const okExchange = check(exchanges, "exchange");
+      const okType = check(types, "type");
+
+      return okSector && okIndustry && okExchange && okType;
+    });
+
+    const total = filtered.length;
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     const start = (page - 1) * limit;
     const end = page * limit;
-    const reports = allReports.slice(start, end);
+    const reports = filtered.slice(start, end);
 
     return new Response(
       JSON.stringify({

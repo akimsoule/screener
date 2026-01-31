@@ -44,11 +44,34 @@ export async function runScreener() {
   return runScreenerWithPage(1, 10);
 }
 
-export async function runScreenerWithPage(page = 1, limit = 10) {
+export type ScreenerFilters = {
+  sectors?: string[];
+  industries?: string[];
+  exchanges?: string[];
+  types?: string[];
+};
+
+export async function runScreenerWithPage(
+  page = 1,
+  limit = 10,
+  filters?: ScreenerFilters,
+) {
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
   });
+
+  if (filters) {
+    if (filters.sectors && filters.sectors.length > 0)
+      params.set("sector", filters.sectors.join(","));
+    if (filters.industries && filters.industries.length > 0)
+      params.set("industry", filters.industries.join(","));
+    if (filters.exchanges && filters.exchanges.length > 0)
+      params.set("exchange", filters.exchanges.join(","));
+    if (filters.types && filters.types.length > 0)
+      params.set("type", filters.types.join(","));
+  }
+
   const res = await fetch(`${API_PREFIX}/screener?${params.toString()}`, {
     method: "GET",
   });
