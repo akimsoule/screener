@@ -47,7 +47,7 @@ export async function addSymbol(name: string, enabled = true) {
 }
 
 export async function runScreener() {
-  return runScreenerWithPage(1, 10);
+  return runScreenerWithPage(1, 20);
 }
 
 export type ScreenerFilters = {
@@ -59,7 +59,7 @@ export type ScreenerFilters = {
 
 export async function runScreenerWithPage(
   page = 1,
-  limit = 10,
+  limit = 20,
   filters?: ScreenerFilters,
 ) {
   const params = new URLSearchParams({
