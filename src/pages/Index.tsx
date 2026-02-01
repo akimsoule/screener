@@ -8,6 +8,7 @@ import { Watchlist } from "@/components/stock/Watchlist";
 import type { WatchlistItem } from "@/types/stock";
 import { useToast } from "@/hooks/use-toast";
 import { getQuote, addSymbol, getSymbols, getFilters } from "@/lib/netlifyApi";
+import { FRONT_PAGE_LIMIT } from "@/lib/Constant";
 
 const WATCHLIST_KEY = "stock-watchlist";
 
@@ -17,6 +18,19 @@ export default function Index() {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
+
+  // Screener reports per page (configurable in UI)
+  const [reportsPerPage, setReportsPerPage] =
+    useState<number>(FRONT_PAGE_LIMIT);
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("reports-per-page");
+      if (v) setReportsPerPage(Number(v));
+    } catch (e) {
+      // ignore
+    }
+  }, []);
 
   // Search
   const [searchTerm, setSearchTerm] = useState("");
@@ -359,6 +373,28 @@ export default function Index() {
                 )}
                 {filtersOpen ? "Hide filters" : "Show filters"}
               </Button>
+              <div className="ml-3 flex items-center gap-2">
+                <label className="text-sm text-muted-foreground">
+                  Reports:
+                </label>
+                <select
+                  value={String(reportsPerPage)}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setReportsPerPage(v);
+                    try {
+                      localStorage.setItem("reports-per-page", String(v));
+                    } catch (err) {}
+                    setCurrentPage(1);
+                  }}
+                  className="text-sm bg-secondary border-border rounded-md px-2 py-1"
+                >
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
             </div>
             {filtersOpen && (
               <div id="filters-panel" className="flex flex-col gap-4">
@@ -521,6 +557,7 @@ export default function Index() {
             industries={selectedIndustries}
             exchanges={selectedExchanges}
             types={selectedTypes}
+            reportsPerPage={reportsPerPage}
           />
         </div>
       </div>

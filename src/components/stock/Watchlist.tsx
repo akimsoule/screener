@@ -26,7 +26,6 @@ import {
 } from "@/components/ui/dialog";
 import type { WatchlistItem, AnalysisReport } from "@/types/stock";
 import { cn } from "@/lib/utils";
-import { FRONT_PAGE_LIMIT } from "@/lib/Constant";
 
 interface WatchlistProps {
   items: WatchlistItem[];
@@ -45,6 +44,7 @@ interface WatchlistProps {
   industries?: string[];
   exchanges?: string[];
   types?: string[];
+  reportsPerPage?: number;
 }
 
 export function Watchlist({
@@ -64,6 +64,7 @@ export function Watchlist({
   industries = [],
   exchanges = [],
   types = [],
+  reportsPerPage = 10,
 }: WatchlistProps) {
   const [newSymbol, setNewSymbol] = useState("");
   const [suggestions, setSuggestions] = useState<
@@ -75,7 +76,7 @@ export function Watchlist({
   const [loadingReports, setLoadingReports] = useState(true);
   const { toast } = useToast();
 
-  const reportsPerPage = FRONT_PAGE_LIMIT;
+  // reportsPerPage is provided by parent (configurable in UI)
   // `reports` contains either the server page results or all results (when searching)
   const filteredReports = reports.filter((r) =>
     r.symbol.toLowerCase().includes(searchTerm.toLowerCase()),
@@ -157,7 +158,15 @@ export function Watchlist({
     };
 
     loadReports();
-  }, [currentPage, searchTerm, sectors, industries, exchanges, types]);
+  }, [
+    currentPage,
+    searchTerm,
+    sectors,
+    industries,
+    exchanges,
+    types,
+    reportsPerPage,
+  ]);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
