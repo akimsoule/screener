@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import type { WatchlistItem, AnalysisReport } from "@/types/stock";
 import { cn } from "@/lib/utils";
+import { FRONT_PAGE_LIMIT } from "@/lib/Constant";
 
 interface WatchlistProps {
   items: WatchlistItem[];
@@ -74,7 +75,7 @@ export function Watchlist({
   const [loadingReports, setLoadingReports] = useState(true);
   const { toast } = useToast();
 
-  const reportsPerPage = 10;
+  const reportsPerPage = FRONT_PAGE_LIMIT;
   // `reports` contains either the server page results or all results (when searching)
   const filteredReports = reports.filter((r) =>
     r.symbol.toLowerCase().includes(searchTerm.toLowerCase()),

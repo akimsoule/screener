@@ -1,12 +1,16 @@
 import type { Context } from "@netlify/functions";
 import runAnalysis from "../app/index";
 import { prisma } from "../lib/prisma";
+import { SERVER_PAGE_LIMIT } from "../lib/constants";
 
 export default async function handler(request: Request, context: Context) {
   try {
     const url = new URL(request.url);
     const page = Math.max(1, Number(url.searchParams.get("page") || "1"));
-    const limit = Math.max(1, Number(url.searchParams.get("limit") || "20"));
+    const limit = Math.max(
+      1,
+      Number(url.searchParams.get("limit") || String(SERVER_PAGE_LIMIT)),
+    );
 
     const result = await runAnalysis();
     const allReports = result.reports || [];

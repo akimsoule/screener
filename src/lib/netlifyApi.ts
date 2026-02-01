@@ -46,8 +46,10 @@ export async function addSymbol(name: string, enabled = true) {
   return res.json();
 }
 
+import { SERVER_PAGE_LIMIT } from "../../netlify/functions/lib/constants";
+
 export async function runScreener() {
-  return runScreenerWithPage(1, 20);
+  return runScreenerWithPage(1, SERVER_PAGE_LIMIT);
 }
 
 export type ScreenerFilters = {
@@ -59,7 +61,7 @@ export type ScreenerFilters = {
 
 export async function runScreenerWithPage(
   page = 1,
-  limit = 20,
+  limit = SERVER_PAGE_LIMIT,
   filters?: ScreenerFilters,
 ) {
   const params = new URLSearchParams({
