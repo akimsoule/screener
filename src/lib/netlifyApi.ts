@@ -1,4 +1,18 @@
 const API_PREFIX = "/api";
+import { SERVER_PAGE_LIMIT } from "../../netlify/functions/lib/constants";
+
+// Helper to get auth headers
+function getAuthHeaders(token?: string | null): HeadersInit {
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+  };
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  return headers;
+}
 
 export async function getQuote(symbol: string) {
   const res = await fetch(
@@ -15,12 +29,6 @@ export async function getPrices(symbol: string, interval = "1d", range = "1y") {
   return res.json();
 }
 
-export async function getSymbols() {
-  const res = await fetch(`${API_PREFIX}/symbols`);
-  if (!res.ok) throw new Error(`symbols fetch failed: ${res.status}`);
-  return res.json();
-}
-
 export async function searchSymbols(query: string) {
   const params = new URLSearchParams({ q: query });
   const res = await fetch(`${API_PREFIX}/suggest?${params.toString()}`);
@@ -28,25 +36,51 @@ export async function searchSymbols(query: string) {
   return res.json();
 }
 
-export async function getFilters() {
-  const res = await fetch(`${API_PREFIX}/filters`);
+export async function getFilters(token?: string | null) {
+  const headers: HeadersInit = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_PREFIX}/filters`, { headers });
   if (!res.ok) throw new Error(`filters fetch failed: ${res.status}`);
   return res.json();
 }
 
-export async function addSymbol(name: string, enabled = true) {
-  const res = await fetch(`${API_PREFIX}/symbols`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ name, enabled }),
-  });
-  if (!res.ok) throw new Error(`add symbol failed: ${res.status}`);
+// Watchlist API (remplace getSymbols)
+export async function getWatchlist(token?: string | null) {
+  const headers: HeadersInit = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_PREFIX}/watchlist`, { headers });
+  if (!res.ok) throw new Error(`watchlist fetch failed: ${res.status}`);
   return res.json();
 }
 
-import { SERVER_PAGE_LIMIT } from "../../netlify/functions/lib/constants";
+// Deprecated: utiliser getWatchlist
+export async function getSymbols() {
+  console.warn("getSymbols is deprecated, use getWatchlist instead");
+  const res = await fetch(`${API_PREFIX}/symbols`);
+  if (!res.ok) throw new Error(`symbols fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function addSymbol(name: string, token?: string | null) {
+  const res = await fetch(`${API_PREFIX}/watchlist`, {
+    method: "POST",
+    headers: getAuthHeaders(token),
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const error = await res
+      .json()
+      .catch(() => ({ message: "Add symbol failed" }));
+    throw new Error(error.message || `add symbol failed: ${res.status}`);
+  }
+  return res.json();
+}
 
 export async function runScreener() {
   return runScreenerWithPage(1, SERVER_PAGE_LIMIT);
@@ -87,29 +121,31 @@ export async function runScreenerWithPage(
   return res.json();
 }
 
-export async function deleteSymbol(name: string) {
-  // find symbol id by name
-  const symbols = await getSymbols();
-  const s = symbols.find(
-    (x: any) => x.name === name || x.name === name.toUpperCase(),
-  );
-  if (!s) throw new Error("Symbol not found");
-
-  const res = await fetch(`${API_PREFIX}/symbols`, {
+export async function deleteSymbol(symbolId: string, token?: string | null) {
+  const res = await fetch(`${API_PREFIX}/watchlist`, {
     method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: s.id }),
+    headers: getAuthHeaders(token),
+    body: JSON.stringify({ symbolId }),
   });
 
-  if (!res.ok && res.status !== 204)
-    throw new Error(`delete symbol failed: ${res.status}`);
+  if (!res.ok && res.status !== 204) {
+    const error = await res.json().catch(() => ({ message: "Delete failed" }));
+    throw new Error(error.message || `delete symbol failed: ${res.status}`);
+  }
   return true;
+}
+
+export async function getMacroData() {
+  const res = await fetch(`${API_PREFIX}/macro`);
+  if (!res.ok) throw new Error(`macro fetch failed: ${res.status}`);
+  return res.json();
 }
 
 export default {
   getQuote,
   getPrices,
-  getSymbols,
+  getSymbols, // deprecated
+  getWatchlist,
   runScreener,
   addSymbol,
   deleteSymbol,

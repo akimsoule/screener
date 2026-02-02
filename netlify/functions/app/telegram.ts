@@ -11,6 +11,7 @@ export async function sendTelegramAlert(message: string) {
       {
         chat_id: TELEGRAM_CHAT_ID,
         text: message,
+        parse_mode: "Markdown",
       },
     );
   } catch (error) {

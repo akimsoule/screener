@@ -3,14 +3,14 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
 interface ChartControlsProps {
-  showMA20: boolean;
-  showMA50: boolean;
-  showVolume: boolean;
-  onToggleMA20: (value: boolean) => void;
-  onToggleMA50: (value: boolean) => void;
-  onToggleVolume: (value: boolean) => void;
-  interval: string;
-  onIntervalChange: (interval: string) => void;
+  readonly showMA20: boolean;
+  readonly showMA50: boolean;
+  readonly showVolume: boolean;
+  readonly onToggleMA20: (value: boolean) => void;
+  readonly onToggleMA50: (value: boolean) => void;
+  readonly onToggleVolume: (value: boolean) => void;
+  readonly interval: string;
+  readonly onIntervalChange: (interval: string) => void;
 }
 
 const intervals = [
@@ -35,7 +35,7 @@ export function ChartControls({
         <div className="flex items-center gap-2">
           <Switch id="ma20" checked={showMA20} onCheckedChange={onToggleMA20} />
           <Label htmlFor="ma20" className="text-sm cursor-pointer">
-            <span className="inline-block w-3 h-0.5 bg-chart-ma-fast mr-2 align-middle" />
+            <span className="inline-block w-3 h-0.5 bg-chart-ma-fast mr-2 align-middle"></span>{" "}
             MA 20
           </Label>
         </div>
@@ -43,7 +43,7 @@ export function ChartControls({
         <div className="flex items-center gap-2">
           <Switch id="ma50" checked={showMA50} onCheckedChange={onToggleMA50} />
           <Label htmlFor="ma50" className="text-sm cursor-pointer">
-            <span className="inline-block w-3 h-0.5 bg-chart-ma-slow mr-2 align-middle" />
+            <span className="inline-block w-3 h-0.5 bg-chart-ma-slow mr-2 align-middle"></span>{" "}
             MA 50
           </Label>
         </div>

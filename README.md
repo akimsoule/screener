@@ -84,7 +84,23 @@ npm run prisma:migrate
 npx prisma migrate dev
 ```
 
-### 4. Configuration Telegram
+### 4. Configuration FRED API (Données Macroéconomiques)
+
+```bash
+# Obtenir une clé API gratuite sur https://fredaccount.stlouisfed.org/apikeys
+# Ajouter dans .env :
+FRED_API_KEY="your_fred_api_key"
+```
+
+La FRED API permet d'accéder aux données économiques officielles :
+
+- **M2SL** : Masse monétaire M2 (liquidité)
+- **MANEMP** : ISM Manufacturing PMI (activité économique)
+- **DFF** : Federal Funds Rate (taux directeur Fed)
+
+Sans cette clé, l'application utilise des estimations basées sur les prix de marché.
+
+### 5. Configuration Telegram
 
 ```bash
 # Créer un bot sur @BotFather
@@ -93,7 +109,7 @@ TELEGRAM_BOT_TOKEN="your_bot_token"
 TELEGRAM_CHAT_ID="your_chat_id"
 ```
 
-### 5. Démarrage
+### 6. Démarrage
 
 ```bash
 # Développement

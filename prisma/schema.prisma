@@ -13,14 +13,52 @@ datasource db {
 }
 
 model Symbol {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  enabled   Boolean  @default(true)
+  id         String      @id @default(cuid())
+  name       String      @unique
+  enabled    Boolean     @default(true)
+  isPopular  Boolean     @default(false) // Symboles populaires visibles par tous
   // Optional enrichment fields from Yahoo (sector, industry, exchange, type)
-  sector    String?
-  industry  String?
-  exchange  String?
-  type      String?
+  sector     String?
+  industry   String?
+  exchange   String?
+  type       String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  watchlists Watchlist[] // Relation many-to-many avec les utilisateurs
+}
+
+model User {
+  id         String      @id @default(cuid())
+  email      String      @unique
+  password   String // Hash du mot de passe (bcrypt)
+  name       String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  watchlists Watchlist[] // Symboles suivis par l'utilisateur
+}
+
+model Watchlist {
+  id        String   @id @default(cuid())
+  userId    String
+  symbolId  String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol    Symbol   @relation(fields: [symbolId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+
+  @@unique([userId, symbolId]) // Un utilisateur ne peut suivre un symbole qu'une fois
+  @@index([userId])
+  @@index([symbolId])
+}
+
+model AlertHistory {
+  id       String   @id @default(cuid())
+  symbol   String
+  action   String // ACHAT, VENTE, etc.
+  score    Int
+  price    Float?
+  sentAt   DateTime @default(now())
+  dateSent String // Format YYYY-MM-DD pour regroupement journalier
+
+  @@unique([symbol, dateSent]) // Un symbole ne peut avoir qu'une alerte par jour
+  @@index([dateSent])
 }

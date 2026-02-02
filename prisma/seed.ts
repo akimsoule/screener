@@ -2,7 +2,22 @@ import { prisma } from "../netlify/functions/lib/prisma";
 import { fetchSuggestions } from "../netlify/functions/lib/yahoo";
 
 async function main() {
-  const symbols = ["GOLD", "GDXU", "VEQT.TO"];
+  // Symboles populaires visibles par tous
+  const popularSymbols = [
+    "AAPL", // Apple
+    "MSFT", // Microsoft
+    "GOOGL", // Google
+    "AMZN", // Amazon
+    "TSLA", // Tesla
+    "NVDA", // Nvidia
+    "META", // Meta
+    "SPY", // S&P 500 ETF
+    "QQQ", // Nasdaq 100 ETF
+    "BTC-USD", // Bitcoin
+    "ETH-USD", // Ethereum
+    "GLD", // Gold ETF
+    "TLT", // Treasury Bonds ETF
+  ];
   // 1) Backfill existing symbols in DB that have missing enrichment
   const missing = await prisma.symbol.findMany({
     where: {
@@ -51,9 +66,9 @@ async function main() {
     `Backfilled ${backfilled.filter(Boolean).length} symbol(s) with missing info.`,
   );
 
-  // 2) Upsert example symbols (ensure they exist and are enriched)
+  // 2) Upsert popular symbols (ensure they exist and are enriched)
   const ops = await Promise.all(
-    symbols.map(async (name) => {
+    popularSymbols.map(async (name) => {
       let details: {
         sector?: string | undefined;
         industry?: string | undefined;
@@ -82,6 +97,7 @@ async function main() {
       return prisma.symbol.upsert({
         where: { name },
         update: {
+          isPopular: true, // Marquer comme populaire
           sector: details.sector || null,
           industry: details.industry || null,
           exchange: details.exchange || null,
@@ -89,6 +105,7 @@ async function main() {
         },
         create: {
           name,
+          isPopular: true, // Marquer comme populaire
           sector: details.sector || null,
           industry: details.industry || null,
           exchange: details.exchange || null,

@@ -1,40 +1,35 @@
 import { prisma } from "../lib/prisma";
 import { fetchSymbolDetails } from "../lib/yahoo";
+import { cache } from "../lib/cache";
 
+/**
+ * @deprecated Use /watchlist instead
+ * This endpoint is kept for backward compatibility
+ */
 export default async function handler(request: Request) {
+  console.warn("⚠️ /symbols endpoint is deprecated. Use /watchlist instead.");
+
   try {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
 
     if (method === "GET") {
-      const symbols = await prisma.symbol.findMany();
+      // Retourner TOUS les symboles (pour compatibilité)
+      const symbols = await prisma.symbol.findMany({
+        select: {
+          id: true,
+          name: true,
+          enabled: true,
+          sector: true,
+          industry: true,
+          exchange: true,
+          type: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
 
-      // Enrich symbols with details (sector, industry, exchange, type) from Yahoo
-      const enriched = await Promise.all(
-        symbols.map(async (s) => {
-          try {
-            const details = await fetchSymbolDetails(s.name);
-            return {
-              ...s,
-              sector: details?.sector || null,
-              industry: details?.industry || null,
-              exchange: details?.exchange || null,
-              type: details?.type || null,
-            };
-          } catch (err) {
-            console.error(`Failed to fetch details for ${s.name}:`, err);
-            return {
-              ...s,
-              sector: null,
-              industry: null,
-              exchange: null,
-              type: null,
-            };
-          }
-        }),
-      );
-
-      return new Response(JSON.stringify(enriched), {
+      return new Response(JSON.stringify(symbols), {
         status: 200,
         headers: {
           "Content-Type": "application/json",
@@ -45,7 +40,30 @@ export default async function handler(request: Request) {
 
     if (method === "POST") {
       const { name, enabled = true } = await request.json();
-      const symbol = await prisma.symbol.create({ data: { name, enabled } });
+
+      // Enrichir avec les détails Yahoo lors de la création
+      let enrichmentData = {};
+      try {
+        const details = await fetchSymbolDetails(name);
+        if (details) {
+          enrichmentData = {
+            sector: details.sector || null,
+            industry: details.industry || null,
+            exchange: details.exchange || null,
+            type: details.type || null,
+          };
+        }
+      } catch (err) {
+        console.warn(`Could not fetch details for ${name}:`, err);
+      }
+
+      const symbol = await prisma.symbol.create({
+        data: { name, enabled, ...enrichmentData },
+      });
+
+      // Invalider le cache d'analyse
+      cache.clear();
+
       return new Response(JSON.stringify(symbol), {
         status: 201,
         headers: {
@@ -61,6 +79,10 @@ export default async function handler(request: Request) {
         where: { id },
         data: { name, enabled },
       });
+
+      // Invalider le cache d'analyse
+      cache.clear();
+
       return new Response(JSON.stringify(symbol), {
         status: 200,
         headers: {
@@ -73,6 +95,10 @@ export default async function handler(request: Request) {
     if (method === "DELETE") {
       const { id } = await request.json();
       await prisma.symbol.delete({ where: { id } });
+
+      // Invalider le cache d'analyse
+      cache.clear();
+
       return new Response(null, {
         status: 204,
         headers: { "Access-Control-Allow-Origin": "*" },

@@ -39,7 +39,7 @@ export default async function handler(request: Request, context: Context) {
     ) {
       const names = Array.from(
         new Set(allReports.map((r: any) => (r.symbol || "").toUpperCase())),
-      ).filter(Boolean);
+      ).filter(Boolean) as string[];
       const rows = await prisma.symbol.findMany({
         where: { name: { in: names } },
         select: {
@@ -67,11 +67,9 @@ export default async function handler(request: Request, context: Context) {
       const meta = metaByName[name] || {};
 
       const check = (values: string[], field?: string) => {
-        // For OR-across-groups semantics we treat an inactive group as not contributing (false),
-        // and only active groups can satisfy the check.
-        if (!values.length) return false;
+        if (!values.length) return null; // groupe inactif
         const v = (meta[field || ""] || "") as string;
-        if (!v) return false;
+        if (!v) return false; // pas de valeur dans la BD
         // compare case-insensitive
         return values.some((s) => s.toUpperCase() === v.toUpperCase());
       };
@@ -81,8 +79,12 @@ export default async function handler(request: Request, context: Context) {
       const okExchange = check(exchanges, "exchange");
       const okType = check(types, "type");
 
-      // OR across groups: an item is included if it matches any active group
-      return okSector || okIndustry || okExchange || okType;
+      // OR across groups: item inclus si au moins un groupe actif match
+      const activeChecks = [okSector, okIndustry, okExchange, okType].filter(
+        (v) => v !== null,
+      );
+      if (activeChecks.length === 0) return true; // aucun filtre actif
+      return activeChecks.some((v) => v === true);
     });
 
     const total = filtered.length;

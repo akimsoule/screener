@@ -27,3 +27,5 @@ export { StockQuoteCard } from "./stock/StockQuoteCard";
 export { StockChart } from "./stock/StockChart";
 export { ChartControls } from "./stock/ChartControls";
 export { Watchlist } from "./stock/Watchlist";
+export { MacroView } from "./stock/MacroView";
+export { AnalysisHierarchy } from "./stock/AnalysisHierarchy";

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Plus,
   RefreshCw,
@@ -24,6 +24,7 @@ import {
   DialogClose,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { AnalysisHierarchy } from "./AnalysisHierarchy";
 import type { WatchlistItem, AnalysisReport } from "@/types/stock";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +46,8 @@ interface WatchlistProps {
   exchanges?: string[];
   types?: string[];
   reportsPerPage?: number;
+  isAuthenticated?: boolean;
+  token?: string | null;
 }
 
 export function Watchlist({
@@ -65,6 +68,8 @@ export function Watchlist({
   exchanges = [],
   types = [],
   reportsPerPage = 10,
+  isAuthenticated = false,
+  token = null,
 }: WatchlistProps) {
   const [newSymbol, setNewSymbol] = useState("");
   const [suggestions, setSuggestions] = useState<
@@ -205,7 +210,7 @@ export function Watchlist({
     };
   }, [newSymbol]);
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     try {
       // call existing prop so parent can react
       onRefresh();
@@ -226,6 +231,139 @@ export function Watchlist({
     } catch (err) {
       console.error("Failed to fetch screener:", err);
     }
+  }, [reportsPerPage, sectors, industries, exchanges, types, onRefresh]);
+
+  const handleDeleteSymbol = useCallback(
+    async (symbol: string) => {
+      try {
+        await deleteSymbol(symbol, token);
+        onRemove(symbol);
+        toast({
+          title: "Supprimé",
+          description: `${symbol} supprimé.`,
+        });
+
+        try {
+          const body = await runScreenerWithPage(currentPage, reportsPerPage, {
+            sectors,
+            industries,
+            exchanges,
+            types,
+          });
+          const fetchedReports = body.reports || [];
+          setReports(fetchedReports);
+          setReportsTotal(body.total || 0);
+
+          // If the current page is now empty and we're not on the first page,
+          // move back one page
+          if (fetchedReports.length === 0 && currentPage > 1) {
+            onPageChange?.(currentPage - 1);
+          }
+        } catch (e) {
+          console.error("Failed to refresh reports after delete:", e);
+        }
+      } catch {
+        toast({
+          title: "Erreur",
+          description: "Impossible de supprimer le symbole.",
+          variant: "destructive",
+        });
+      }
+    },
+    [
+      onRemove,
+      toast,
+      token,
+      currentPage,
+      reportsPerPage,
+      sectors,
+      industries,
+      exchanges,
+      types,
+      onPageChange,
+    ],
+  );
+
+  const formatRecommendationLong = (r: AnalysisReport) => {
+    const rec = r.recommendation;
+    if (!rec) return "";
+
+    const lines: string[] = [];
+
+    // ===== HEADER =====
+    lines.push(`📊 Analyse ${r.symbol}`);
+    lines.push(
+      `Signal : ${rec.side} | Score : ${r.score} | Confiance modèle : ${r.confidence}/100`,
+    );
+    lines.push("");
+
+    // ===== MARKET CONTEXT =====
+    const regimeDesc =
+      r.regime === "TREND"
+        ? "Marché directionnel (tendance claire)"
+        : "Marché instable / volatil";
+
+    lines.push(`🧭 Contexte de marché`);
+    lines.push(`• Régime : ${regimeDesc}`);
+    lines.push(`• Tendance daily : ${r.details.trendDaily}`);
+    lines.push(`• Tendance weekly : ${r.details.trendWeekly}`);
+    lines.push("");
+
+    // ===== INDICATORS =====
+    lines.push(`📈 Indicateurs`);
+    lines.push(`• Prix actuel : $${r.details.price.toFixed(2)}`);
+    lines.push(`• RSI : ${r.details.rsi.toFixed(2)} (momentum neutre → sain)`);
+    lines.push(`• ATR : ${r.details.atr.toFixed(4)} (volatilité)`);
+    lines.push("");
+
+    // ===== TRADE PLAN =====
+    lines.push(`🎯 Plan de trade`);
+    lines.push(`• Direction : ${rec.side}`);
+    lines.push(`• Zone d’entrée : ~$${rec.entry}`);
+    lines.push(`• Stop loss : $${rec.stopLoss}`);
+    lines.push(`• Take profit : $${rec.takeProfit}`);
+    lines.push(
+      `• Risk / Reward : ${rec.riskReward ? `${rec.riskReward}:1` : "N/A"}`,
+    );
+
+    if (rec.entry && rec.stopLoss && rec.takeProfit && rec.riskReward) {
+      const risk = Math.abs(rec.entry - rec.stopLoss);
+      const reward = Math.abs(rec.takeProfit - rec.entry);
+
+      lines.push(
+        `• Vous risquez ~$${risk.toFixed(2)} pour tenter de gagner ~$${reward.toFixed(2)}`,
+      );
+
+      lines.push(
+        `• Cela signifie que le trade peut rester rentable même avec ~${Math.round(
+          100 / (rec.riskReward + 1),
+        )}% de trades gagnants`,
+      );
+    }
+
+    lines.push("");
+
+    // ===== INTERPRETATION =====
+    lines.push(`🧠 Lecture du modèle`);
+    lines.push(r.interpretation);
+    lines.push("");
+
+    // ===== MACRO =====
+    if (r.macroContext?.phase) {
+      lines.push(`🌍 Contexte macro`);
+      lines.push(
+        `• Phase : ${r.macroContext.phase} (${r.macroContext.cycleStage})`,
+      );
+      lines.push(`• Confiance macro : ${r.macroContext.confidence}/100`);
+      lines.push("");
+    }
+
+    // ===== DISCLAIMER =====
+    lines.push(
+      "⚠️ Ceci est un scénario probabiliste, pas une certitude. Risquez uniquement un capital que vous pouvez perdre.",
+    );
+
+    return lines.join("\n");
   };
 
   return (
@@ -248,12 +386,19 @@ export function Watchlist({
             <Input
               value={newSymbol}
               onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-              placeholder="Add symbol"
+              placeholder={
+                isAuthenticated ? "Add symbol" : "Connectez-vous pour ajouter"
+              }
               className="bg-secondary border-border font-mono uppercase"
               aria-autocomplete="list"
               aria-haspopup="listbox"
+              disabled={!isAuthenticated}
             />
-            <Button type="submit" size="icon" disabled={!newSymbol.trim()}>
+            <Button
+              type="submit"
+              size="icon"
+              disabled={!isAuthenticated || !newSymbol.trim()}
+            >
               <Plus className="h-4 w-4" />
             </Button>
           </div>
@@ -297,10 +442,16 @@ export function Watchlist({
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="px-4 pb-4">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              Showing {items.length > 0 ? (currentPage - 1) * 10 + 1 : 0} to{" "}
-              {Math.min(currentPage * 10, totalItems)} of {totalItems} items
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-sm text-muted-foreground text-center sm:text-left">
+              <span className="hidden sm:inline">
+                Showing {items.length > 0 ? (currentPage - 1) * 10 + 1 : 0} to{" "}
+                {Math.min(currentPage * 10, totalItems)} of {totalItems} items
+              </span>
+              <span className="sm:hidden">
+                {items.length > 0 ? (currentPage - 1) * 10 + 1 : 0}-
+                {Math.min(currentPage * 10, totalItems)} / {totalItems}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -310,9 +461,9 @@ export function Watchlist({
                 disabled={currentPage === 1}
               >
                 <ChevronLeft className="h-4 w-4" />
-                Previous
+                <span className="hidden sm:inline">Previous</span>
               </Button>
-              <span className="text-sm">
+              <span className="text-sm whitespace-nowrap">
                 Page {currentPage} of {totalPages}
               </span>
               <Button
@@ -321,7 +472,7 @@ export function Watchlist({
                 onClick={() => onPageChange?.(currentPage + 1)}
                 disabled={currentPage === totalPages}
               >
-                Next
+                <span className="hidden sm:inline">Next</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
@@ -341,48 +492,293 @@ export function Watchlist({
               </span>
             </div>
           ) : (
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground">
-                    <th className="px-2 py-1">Symbol</th>
-                    <th className="px-2 py-1">Action</th>
-                    <th className="px-2 py-1">Score</th>
-                    <th className="px-2 py-1">Conf.</th>
-                    <th className="px-2 py-1">Price</th>
-                    <th className="px-2 py-1">Régime</th>
-                    <th className="px-2 py-1">Tend (D)</th>
-                    <th className="px-2 py-1">Tend (W)</th>
-                    <th className="px-2 py-1">Suppr.</th>
-                    <th className="px-2 py-1">Info</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedReports.map((r) => (
-                    <tr key={r.symbol} className="odd:bg-secondary/10">
-                      <td className="px-2 py-1 font-mono">{r.symbol}</td>
-                      <td className="px-2 py-1">
-                        <span
-                          className={cn(
-                            "text-xs font-mono px-2 py-0.5 rounded-full",
-                            r.action.includes("ACHAT")
-                              ? "bg-gain/20 text-gain"
-                              : r.action.includes("VENTE")
-                                ? "bg-loss/20 text-loss"
-                                : "bg-secondary text-muted-foreground",
+            <>
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground">
+                      <th className="px-2 py-1">Symbol</th>
+                      <th className="px-2 py-1">Action</th>
+                      <th className="px-2 py-1">Score</th>
+                      <th className="px-2 py-1">Conf.</th>
+                      <th className="px-2 py-1">Price</th>
+                      <th className="px-2 py-1">Régime</th>
+                      <th className="px-2 py-1">Tend (D)</th>
+                      <th className="px-2 py-1">Tend (W)</th>
+                      <th className="px-2 py-1">Suppr.</th>
+                      <th className="px-2 py-1">Info</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedReports.map((r) => (
+                      <tr key={r.symbol} className="odd:bg-secondary/10">
+                        <td className="px-2 py-1 font-mono">{r.symbol}</td>
+                        <td className="px-2 py-1">
+                          <span
+                            className={cn(
+                              "text-xs font-mono px-2 py-0.5 rounded-full",
+                              r.action.includes("ACHAT")
+                                ? "bg-gain/20 text-gain"
+                                : r.action.includes("VENTE")
+                                  ? "bg-loss/20 text-loss"
+                                  : "bg-secondary text-muted-foreground",
+                            )}
+                          >
+                            {r.action}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1 font-mono">{r.score}</td>
+                        <td className="px-2 py-1">{r.confidence}%</td>
+                        <td className="px-2 py-1">
+                          {r.details?.price
+                            ? `$${Number(r.details.price).toFixed(2)}`
+                            : "-"}
+                        </td>
+                        <td className="px-2 py-1">
+                          <span
+                            className={cn(
+                              "text-xs px-2 py-0.5 rounded-full",
+                              r.regime === "TREND"
+                                ? "bg-blue-500/20 text-blue-600"
+                                : "bg-orange-500/20 text-orange-600",
+                            )}
+                          >
+                            {r.regime}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1 text-xs">
+                          {r.details?.trendDaily}
+                        </td>
+                        <td className="px-2 py-1 text-xs">
+                          {r.details?.trendWeekly}
+                        </td>
+                        <td className="px-2 py-1">
+                          {isAuthenticated && (
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                >
+                                  <Trash className="h-3 w-3" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="max-w-sm">
+                                <DialogHeader>
+                                  <DialogTitle>
+                                    Confirmer la suppression
+                                  </DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-4">
+                                  <p>
+                                    Supprimer{" "}
+                                    <span className="font-mono">
+                                      {r.symbol}
+                                    </span>{" "}
+                                    de la watchlist ?
+                                  </p>
+                                  <div className="flex justify-end gap-2">
+                                    <DialogClose asChild>
+                                      <Button variant="ghost">Annuler</Button>
+                                    </DialogClose>
+                                    <DialogClose asChild>
+                                      <Button
+                                        variant="destructive"
+                                        onClick={() =>
+                                          handleDeleteSymbol(r.symbol)
+                                        }
+                                      >
+                                        Supprimer
+                                      </Button>
+                                    </DialogClose>
+                                  </div>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
                           )}
-                        >
-                          {r.action}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1 font-mono">{r.score}</td>
-                      <td className="px-2 py-1">{r.confidence}%</td>
-                      <td className="px-2 py-1">
-                        {r.details?.price
-                          ? `$${Number(r.details.price).toFixed(2)}`
-                          : "-"}
-                      </td>
-                      <td className="px-2 py-1">
+                        </td>
+                        <td className="px-2 py-1">
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                              >
+                                <Info className="h-3 w-3" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-3xl">
+                              <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2">
+                                  <span className="font-mono">{r.symbol}</span>
+                                  <span
+                                    className={cn(
+                                      "text-sm px-2 py-1 rounded-full",
+                                      r.action.includes("ACHAT")
+                                        ? "bg-gain/20 text-gain"
+                                        : r.action.includes("VENTE")
+                                          ? "bg-loss/20 text-loss"
+                                          : "bg-secondary text-muted-foreground",
+                                    )}
+                                  >
+                                    {r.action}
+                                  </span>
+                                </DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                {/* Hiérarchie d'Analyse : Fondamental → Technique */}
+                                {r.macroContext && (
+                                  <AnalysisHierarchy
+                                    macroPhase={r.macroContext.phase}
+                                    macroConfidence={r.macroContext.confidence}
+                                    technicalScore={r.score}
+                                    technicalAction={r.action}
+                                    liotBias={r.liotBias}
+                                  />
+                                )}
+                                <div className="text-sm">
+                                  <p className="font-medium mb-2">
+                                    Interprétation :
+                                  </p>
+                                  <p className="text-muted-foreground">
+                                    {r.interpretation}
+                                  </p>
+                                </div>
+                                {r.recommendation && (
+                                  <div>
+                                    <p className="font-medium mb-2">
+                                      Recommandation :
+                                    </p>
+                                    <p className="text-sm text-muted-foreground mb-2 whitespace-pre-line">
+                                      {formatRecommendationLong(r)}
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-2 text-sm">
+                                      <div>
+                                        <span className="font-medium">
+                                          Side:
+                                        </span>{" "}
+                                        {r.recommendation.side}
+                                      </div>
+                                      <div>
+                                        <span className="font-medium">RR:</span>{" "}
+                                        {r.recommendation.riskReward}
+                                      </div>
+                                      <div>
+                                        <span className="font-medium">
+                                          Entry:
+                                        </span>{" "}
+                                        {r.recommendation.entry ?? "-"}
+                                      </div>
+                                      <div>
+                                        <span className="font-medium">
+                                          Stop Loss:
+                                        </span>{" "}
+                                        {r.recommendation.stopLoss ?? "-"}
+                                      </div>
+                                      <div>
+                                        <span className="font-medium">
+                                          Take Profit:
+                                        </span>{" "}
+                                        {r.recommendation.takeProfit ?? "-"}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div>
+                                    <span className="font-medium">Score :</span>{" "}
+                                    {r.score}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">
+                                      Confiance :
+                                    </span>{" "}
+                                    {r.confidence}%
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">
+                                      Régime :
+                                    </span>{" "}
+                                    <span
+                                      className={cn(
+                                        "px-2 py-1 rounded-full text-xs",
+                                        r.regime === "TREND"
+                                          ? "bg-blue-500/20 text-blue-600"
+                                          : "bg-orange-500/20 text-orange-600",
+                                      )}
+                                    >
+                                      {r.regime}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">Prix :</span>{" "}
+                                    ${r.details?.price?.toFixed(2)}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">RSI :</span>{" "}
+                                    {r.details?.rsi?.toFixed(2)}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">ATR :</span>{" "}
+                                    {r.details?.atr?.toFixed(4)}
+                                  </div>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-3">
+                {paginatedReports.map((r) => (
+                  <div
+                    key={r.symbol}
+                    className="border rounded-lg p-3 space-y-2"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="font-mono font-bold text-base">
+                          {r.symbol}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {r.details?.price
+                            ? `$${Number(r.details.price).toFixed(2)}`
+                            : "-"}
+                        </div>
+                      </div>
+                      <span
+                        className={cn(
+                          "text-xs font-mono px-2 py-1 rounded-full whitespace-nowrap",
+                          r.action.includes("ACHAT")
+                            ? "bg-gain/20 text-gain"
+                            : r.action.includes("VENTE")
+                              ? "bg-loss/20 text-loss"
+                              : "bg-secondary text-muted-foreground",
+                        )}
+                      >
+                        {r.action}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">Score:</span>{" "}
+                        <span className="font-mono font-medium">{r.score}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Conf:</span>{" "}
+                        {r.confidence}%
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Régime:</span>{" "}
                         <span
                           className={cn(
                             "text-xs px-2 py-0.5 rounded-full",
@@ -393,22 +789,16 @@ export function Watchlist({
                         >
                           {r.regime}
                         </span>
-                      </td>
-                      <td className="px-2 py-1 text-xs">
-                        {r.details?.trendDaily}
-                      </td>
-                      <td className="px-2 py-1 text-xs">
-                        {r.details?.trendWeekly}
-                      </td>
-                      <td className="px-2 py-1">
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                      {isAuthenticated && (
                         <Dialog>
                           <DialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0"
-                            >
-                              <Trash className="h-3 w-3" />
+                            <Button variant="ghost" size="sm" className="h-8">
+                              <Trash className="h-4 w-4 mr-1" />
+                              Supprimer
                             </Button>
                           </DialogTrigger>
                           <DialogContent className="max-w-sm">
@@ -430,56 +820,7 @@ export function Watchlist({
                                 <DialogClose asChild>
                                   <Button
                                     variant="destructive"
-                                    onClick={async () => {
-                                      try {
-                                        await deleteSymbol(r.symbol);
-                                        onRemove(r.symbol);
-                                        toast({
-                                          title: "Supprimé",
-                                          description: `${r.symbol} supprimé.`,
-                                        });
-
-                                        try {
-                                          // Re-fetch current page reports to ensure UI is consistent
-                                          const body =
-                                            await runScreenerWithPage(
-                                              currentPage,
-                                              reportsPerPage,
-                                              {
-                                                sectors,
-                                                industries,
-                                                exchanges,
-                                                types,
-                                              },
-                                            );
-                                          const fetched = body.reports || [];
-                                          setReports(fetched);
-                                          setReportsTotal(body.total || 0);
-
-                                          // If the current page is now empty and we're not on the first page,
-                                          // move back one page which will trigger the effect to load it.
-                                          if (
-                                            fetched.length === 0 &&
-                                            currentPage > 1
-                                          ) {
-                                            onPageChange?.(currentPage - 1);
-                                          }
-                                        } catch (e) {
-                                          console.error(
-                                            "Failed to refresh reports after delete:",
-                                            e,
-                                          );
-                                        }
-                                      } catch (err) {
-                                        console.error(err);
-                                        toast({
-                                          title: "Erreur",
-                                          description:
-                                            "Impossible de supprimer.",
-                                          variant: "destructive",
-                                        });
-                                      }
-                                    }}
+                                    onClick={() => handleDeleteSymbol(r.symbol)}
                                   >
                                     Supprimer
                                   </Button>
@@ -488,139 +829,167 @@ export function Watchlist({
                             </div>
                           </DialogContent>
                         </Dialog>
-                      </td>
-                      <td className="px-2 py-1">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0"
-                            >
-                              <Info className="h-3 w-3" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-md">
-                            <DialogHeader>
-                              <DialogTitle className="flex items-center gap-2">
-                                <span className="font-mono">{r.symbol}</span>
-                                <span
-                                  className={cn(
-                                    "text-sm px-2 py-1 rounded-full",
-                                    r.action.includes("ACHAT")
-                                      ? "bg-gain/20 text-gain"
-                                      : r.action.includes("VENTE")
-                                        ? "bg-loss/20 text-loss"
-                                        : "bg-secondary text-muted-foreground",
-                                  )}
-                                >
-                                  {r.action}
-                                </span>
-                              </DialogTitle>
-                            </DialogHeader>
-                            <div className="space-y-4">
-                              <div className="text-sm">
+                      )}
+
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-8">
+                            <Info className="h-4 w-4 mr-1" />
+                            Info
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-3xl">
+                          <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                              <span className="font-mono">{r.symbol}</span>
+                              <span
+                                className={cn(
+                                  "text-sm px-2 py-1 rounded-full",
+                                  r.action.includes("ACHAT")
+                                    ? "bg-gain/20 text-gain"
+                                    : r.action.includes("VENTE")
+                                      ? "bg-loss/20 text-loss"
+                                      : "bg-secondary text-muted-foreground",
+                                )}
+                              >
+                                {r.action}
+                              </span>
+                            </DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            {r.macroContext && (
+                              <AnalysisHierarchy
+                                macroPhase={r.macroContext.phase}
+                                macroConfidence={r.macroContext.confidence}
+                                technicalScore={r.score}
+                                technicalAction={r.action}
+                                liotBias={r.liotBias}
+                              />
+                            )}
+
+                            <div className="text-sm">
+                              <p className="font-medium mb-2">
+                                Interprétation :
+                              </p>
+                              <p className="text-muted-foreground">
+                                {r.interpretation}
+                              </p>
+                            </div>
+
+                            {r.recommendation && (
+                              <div>
                                 <p className="font-medium mb-2">
-                                  Interprétation :
+                                  Recommandation :
                                 </p>
-                                <p className="text-muted-foreground">
-                                  {r.interpretation}
+                                <p className="text-sm text-muted-foreground mb-2 whitespace-pre-line">
+                                  {formatRecommendationLong(r)}
                                 </p>
-                              </div>
-                              {r.recommendation && (
-                                <div>
-                                  <p className="font-medium mb-2">
-                                    Recommandation :
-                                  </p>
-                                  <div className="grid grid-cols-2 gap-2 text-sm">
-                                    <div>
-                                      <span className="font-medium">Side:</span>{" "}
-                                      {r.recommendation.side}
-                                    </div>
-                                    <div>
-                                      <span className="font-medium">RR:</span>{" "}
-                                      {r.recommendation.riskReward}
-                                    </div>
-                                    <div>
-                                      <span className="font-medium">
-                                        Entry:
-                                      </span>{" "}
-                                      {r.recommendation.entry ?? "-"}
-                                    </div>
-                                    <div>
-                                      <span className="font-medium">
-                                        Stop Loss:
-                                      </span>{" "}
-                                      {r.recommendation.stopLoss ?? "-"}
-                                    </div>
-                                    <div>
-                                      <span className="font-medium">
-                                        Take Profit:
-                                      </span>{" "}
-                                      {r.recommendation.takeProfit ?? "-"}
-                                    </div>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div>
+                                    <span className="font-medium">Side:</span>{" "}
+                                    {r.recommendation.side}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">RR:</span>{" "}
+                                    {r.recommendation.riskReward}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">Entry:</span>{" "}
+                                    {r.recommendation.entry ?? "-"}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">
+                                      Stop Loss:
+                                    </span>{" "}
+                                    {r.recommendation.stopLoss ?? "-"}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">
+                                      Take Profit:
+                                    </span>{" "}
+                                    {r.recommendation.takeProfit ?? "-"}
                                   </div>
                                 </div>
-                              )}
-                              <div className="grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                  <span className="font-medium">Score :</span>{" "}
-                                  {r.score}
-                                </div>
-                                <div>
-                                  <span className="font-medium">
-                                    Confiance :
-                                  </span>{" "}
-                                  {r.confidence}%
-                                </div>
-                                <div>
-                                  <span className="font-medium">Régime :</span>{" "}
-                                  <span
-                                    className={cn(
-                                      "px-2 py-1 rounded-full text-xs",
-                                      r.regime === "TREND"
-                                        ? "bg-blue-500/20 text-blue-600"
-                                        : "bg-orange-500/20 text-orange-600",
-                                    )}
-                                  >
-                                    {r.regime}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="font-medium">Prix :</span> $
-                                  {r.details?.price?.toFixed(2)}
-                                </div>
-                                <div>
-                                  <span className="font-medium">RSI :</span>{" "}
-                                  {r.details?.rsi?.toFixed(2)}
-                                </div>
-                                <div>
-                                  <span className="font-medium">ATR :</span>{" "}
-                                  {r.details?.atr?.toFixed(4)}
-                                </div>
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="font-medium">Score :</span>{" "}
+                                {r.score}
+                              </div>
+                              <div>
+                                <span className="font-medium">Confiance :</span>{" "}
+                                {r.confidence}%
+                              </div>
+                              <div>
+                                <span className="font-medium">Régime :</span>{" "}
+                                <span
+                                  className={cn(
+                                    "px-2 py-1 rounded-full text-xs",
+                                    r.regime === "TREND"
+                                      ? "bg-blue-500/20 text-blue-600"
+                                      : "bg-orange-500/20 text-orange-600",
+                                  )}
+                                >
+                                  {r.regime}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="font-medium">Prix :</span> $
+                                {r.details?.price?.toFixed(2)}
+                              </div>
+                              <div>
+                                <span className="font-medium">
+                                  Tendance Daily :
+                                </span>{" "}
+                                {r.details?.trendDaily}
+                              </div>
+                              <div>
+                                <span className="font-medium">
+                                  Tendance Weekly :
+                                </span>{" "}
+                                {r.details?.trendWeekly}
+                              </div>
+                              <div>
+                                <span className="font-medium">RSI :</span>{" "}
+                                {r.details?.rsi?.toFixed(2)}
+                              </div>
+                              <div>
+                                <span className="font-medium">ATR :</span>{" "}
+                                {r.details?.atr?.toFixed(4)}
                               </div>
                             </div>
-                          </DialogContent>
-                        </Dialog>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
           {/* Reports pagination */}
           {totalReportPages > 1 && !loadingReports && (
             <div className="px-4 pt-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                  Showing{" "}
-                  {reportsTotal > 0
-                    ? (currentPage - 1) * reportsPerPage + 1
-                    : 0}{" "}
-                  to {Math.min(currentPage * reportsPerPage, reportsTotal)} of{" "}
-                  {reportsTotal} reports
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-sm text-muted-foreground text-center sm:text-left">
+                  <span className="hidden sm:inline">
+                    Showing{" "}
+                    {reportsTotal > 0
+                      ? (currentPage - 1) * reportsPerPage + 1
+                      : 0}{" "}
+                    to {Math.min(currentPage * reportsPerPage, reportsTotal)} of{" "}
+                    {reportsTotal} reports
+                  </span>
+                  <span className="sm:hidden">
+                    {reportsTotal > 0
+                      ? (currentPage - 1) * reportsPerPage + 1
+                      : 0}
+                    -{Math.min(currentPage * reportsPerPage, reportsTotal)} /{" "}
+                    {reportsTotal}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -630,9 +999,9 @@ export function Watchlist({
                     disabled={currentPage === 1}
                   >
                     <ChevronLeft className="h-4 w-4" />
-                    Previous
+                    <span className="hidden sm:inline">Previous</span>
                   </Button>
-                  <span className="text-sm">
+                  <span className="text-sm whitespace-nowrap">
                     Page {currentPage} of {totalReportPages}
                   </span>
                   <Button
@@ -641,7 +1010,7 @@ export function Watchlist({
                     onClick={() => onPageChange?.(currentPage + 1)}
                     disabled={currentPage === totalReportPages}
                   >
-                    Next
+                    <span className="hidden sm:inline">Next</span>
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>

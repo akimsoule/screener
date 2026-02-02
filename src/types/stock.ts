@@ -26,11 +26,14 @@ export interface WatchlistItem {
   price: number;
   change: number;
   changePercent: number;
-  addedAt: string;
+  addedAt?: string;
   sector?: string | null;
   industry?: string | null;
   exchange?: string | null;
   type?: string | null;
+  isPopular?: boolean;
+  inWatchlist?: boolean;
+  symbolId?: string;
 }
 
 export interface StockIndicators {
@@ -41,6 +44,23 @@ export interface StockIndicators {
 }
 
 export type Regime = "TREND" | "RANGE";
+
+export interface MacroRegime {
+  phase: "RISK_ON" | "RISK_OFF" | "TRANSITION";
+  cycleStage: "EARLY_CYCLE" | "MID_CYCLE" | "LATE_CYCLE" | "RECESSION";
+  fedPolicy: "CUTTING" | "PAUSING" | "HAWKISH_PAUSE" | "HIKING";
+  dollarRegime: "WEAK" | "NEUTRAL" | "STRENGTHENING";
+  liquidity: "EXPANDING" | "NEUTRAL" | "CONTRACTING";
+  confidence: number; // 0-100
+}
+
+export interface AssetClassBias {
+  equities: number; // +20 = très bullish, -20 = très bearish
+  bonds: number;
+  commodities: number;
+  crypto: number;
+  forex: number;
+}
 
 export interface AnalysisReport {
   symbol: string;
@@ -64,4 +84,7 @@ export interface AnalysisReport {
     takeProfit: number | null;
     riskReward: number | null;
   };
+  // Contexte macro optionnel
+  macroContext?: MacroRegime;
+  liotBias?: number;
 }
