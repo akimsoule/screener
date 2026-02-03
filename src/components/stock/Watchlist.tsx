@@ -765,9 +765,23 @@ export function Watchlist({
                                             <span className="font-medium">
                                               Durée estimée:
                                             </span>{" "}
-                                            {r.recommendation.holdingPeriod.target} jours
+                                            {
+                                              r.recommendation.holdingPeriod
+                                                .target
+                                            }{" "}
+                                            jours
                                             <span className="text-xs text-muted-foreground ml-1">
-                                              ({r.recommendation.holdingPeriod.min}-{r.recommendation.holdingPeriod.max}j)
+                                              (
+                                              {
+                                                r.recommendation.holdingPeriod
+                                                  .min
+                                              }
+                                              -
+                                              {
+                                                r.recommendation.holdingPeriod
+                                                  .max
+                                              }
+                                              j)
                                             </span>
                                           </div>
                                           <div className="col-span-2">
@@ -775,7 +789,10 @@ export function Watchlist({
                                               Type:
                                             </span>{" "}
                                             <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                                              {r.recommendation.holdingPeriod.description}
+                                              {
+                                                r.recommendation.holdingPeriod
+                                                  .description
+                                              }
                                             </span>
                                           </div>
                                         </>
@@ -1023,9 +1040,11 @@ export function Watchlist({
                                         <span className="font-medium">
                                           Durée estimée:
                                         </span>{" "}
-                                        {r.recommendation.holdingPeriod.target} jours
+                                        {r.recommendation.holdingPeriod.target}{" "}
+                                        jours
                                         <span className="text-xs text-muted-foreground ml-1">
-                                          ({r.recommendation.holdingPeriod.min}-{r.recommendation.holdingPeriod.max}j)
+                                          ({r.recommendation.holdingPeriod.min}-
+                                          {r.recommendation.holdingPeriod.max}j)
                                         </span>
                                       </div>
                                       <div className="col-span-2">
@@ -1033,7 +1052,10 @@ export function Watchlist({
                                           Type:
                                         </span>{" "}
                                         <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                                          {r.recommendation.holdingPeriod.description}
+                                          {
+                                            r.recommendation.holdingPeriod
+                                              .description
+                                          }
                                         </span>
                                       </div>
                                     </>
