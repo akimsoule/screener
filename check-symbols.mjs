@@ -1,6 +1,12 @@
-import { PrismaClient } from '@prisma/client';
+import "dotenv/config";
+import pg from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL;
+const pool = new pg.Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 async function checkSymbols() {
   const symbols = await prisma.symbol.findMany({
@@ -21,6 +27,7 @@ async function checkSymbols() {
   console.log(JSON.stringify(symbols, null, 2));
   
   await prisma.$disconnect();
+  await pool.end();
 }
 
 checkSymbols();

@@ -1,6 +1,7 @@
 import type { Context } from "@netlify/functions";
 import { prisma } from "../lib/prisma";
 import { verifyToken } from "../lib/auth";
+import runAnalysis from "../app/index";
 
 export default async function handler(request: Request, context: Context) {
   try {
@@ -81,20 +82,23 @@ export default async function handler(request: Request, context: Context) {
       select: { type: true },
     });
 
-    const actionsRows = await prisma.symbol.findMany({
-      where: {
-        id: { in: symbolIds },
-        action: { not: null },
-      },
-      distinct: ["action"],
-      select: { action: true },
+    // Pour les actions, on récupère depuis les rapports d'analyse (pas depuis Symbol.action)
+    const result = await runAnalysis();
+    const allReports = result.reports || [];
+
+    // Extraire les actions distinctes non nulles des rapports
+    const actionsSet = new Set<string>();
+    allReports.forEach((report: { action?: string }) => {
+      if (report.action) {
+        actionsSet.add(report.action);
+      }
     });
 
     const sectors = sectorsRows.map((r) => r.sector!).filter(Boolean);
     const industries = industriesRows.map((r) => r.industry!).filter(Boolean);
     const exchanges = exchangesRows.map((r) => r.exchange!).filter(Boolean);
     const types = typesRows.map((r) => r.type!).filter(Boolean);
-    const actions = actionsRows.map((r) => r.action!).filter(Boolean);
+    const actions = Array.from(actionsSet).sort();
 
     return new Response(
       JSON.stringify({ sectors, industries, exchanges, types, actions }),

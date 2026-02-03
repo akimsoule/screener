@@ -236,10 +236,25 @@ export async function fetchSuggestions(query: string) {
   return suggestions;
 }
 
-export async function fetchSymbolDetails(symbol: string) {
+export async function fetchSymbolDetails(symbol: string): Promise<{
+  symbol: string;
+  name: string;
+  exchange: string;
+  industry: string;
+  sector: string;
+  type: string;
+} | null> {
   const cacheKey = `details:${symbol}`;
   const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  if (cached)
+    return cached as {
+      symbol: string;
+      name: string;
+      exchange: string;
+      industry: string;
+      sector: string;
+      type: string;
+    };
 
   // Try profile2 for company metadata
   const url = `${FINNHUB_BASE}/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(API_KEY)}`;

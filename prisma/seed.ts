@@ -1,5 +1,5 @@
 import { prisma } from "../netlify/functions/lib/prisma";
-import { fetchSuggestions } from "../netlify/functions/lib/provider/finnhub";
+import { fetchSymbolDetails } from "../netlify/functions/lib/provider/finnhub";
 
 type Suggestion = {
   symbol?: string;
@@ -78,18 +78,14 @@ async function main() {
 
   const backfillProcessor = async (row: (typeof missing)[0]) => {
     try {
-      const suggestions: Suggestion[] = await fetchSuggestions(row.name);
-      const match =
-        suggestions.find(
-          (s) => s.symbol?.toUpperCase() === row.name.toUpperCase(),
-        ) || suggestions[0];
-      if (!match) return null;
+      const details = await fetchSymbolDetails(row.name);
+      if (!details) return null;
 
       const data: Record<string, string> = {};
-      if (!row.sector && match.sector) data.sector = match.sector;
-      if (!row.industry && match.industry) data.industry = match.industry;
-      if (!row.exchange && match.exchange) data.exchange = match.exchange;
-      if (!row.type && match.type) data.type = match.type;
+      if (!row.sector && details.sector) data.sector = details.sector;
+      if (!row.industry && details.industry) data.industry = details.industry;
+      if (!row.exchange && details.exchange) data.exchange = details.exchange;
+      if (!row.type && details.type) data.type = details.type;
 
       if (Object.keys(data).length === 0) return null;
       return prisma.symbol.update({ where: { id: row.id }, data });
@@ -117,21 +113,17 @@ async function main() {
     } = {};
 
     try {
-      const suggestions: Suggestion[] = await fetchSuggestions(name);
-      const match =
-        suggestions.find(
-          (s) => s.symbol?.toUpperCase() === name.toUpperCase(),
-        ) || suggestions[0];
-      if (match) {
+      const symbolDetails = await fetchSymbolDetails(name);
+      if (symbolDetails) {
         details = {
-          sector: match.sector || undefined,
-          industry: match.industry || undefined,
-          exchange: match.exchange || undefined,
-          type: match.type || undefined,
+          sector: symbolDetails.sector || undefined,
+          industry: symbolDetails.industry || undefined,
+          exchange: symbolDetails.exchange || undefined,
+          type: symbolDetails.type || undefined,
         };
       }
     } catch (err) {
-      console.error(`Failed to fetch suggestions for ${name}:`, err);
+      console.error(`Failed to fetch details for ${name}:`, err);
     }
 
     return prisma.symbol.upsert({
@@ -162,14 +154,13 @@ async function main() {
   );
 }
 
-main()
-  .then(async () => {
-    await prisma.$disconnect();
-    console.log("Seed completed successfully.");
-    process.exit(0);
-  })
-  .catch(async (error) => {
-    console.error("Seed failed:", error);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+try {
+  await main();
+  await prisma.$disconnect();
+  console.log("Seed completed successfully.");
+  process.exit(0);
+} catch (error) {
+  console.error("Seed failed:", error);
+  await prisma.$disconnect();
+  process.exit(1);
+}
