@@ -1,4 +1,4 @@
-import { fetchSymbolDetails } from "../lib/yahoo";
+import { fetchSymbolDetails } from "../lib/provider/dataProvider";
 
 export default async function handler(request: Request) {
   try {

@@ -22,6 +22,7 @@ model Symbol {
   industry   String?
   exchange   String?
   type       String?
+  action     String? // Dernière action recommandée (STRONG_BUY, BUY, HOLD, SELL, STRONG_SELL)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
   watchlists Watchlist[] // Relation many-to-many avec les utilisateurs

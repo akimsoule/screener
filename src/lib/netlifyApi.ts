@@ -22,6 +22,13 @@ export async function getQuote(symbol: string) {
   return res.json();
 }
 
+export async function getQuotes(symbols: string[]) {
+  const symbolsParam = symbols.map((s) => encodeURIComponent(s)).join(",");
+  const res = await fetch(`${API_PREFIX}/quotes?symbols=${symbolsParam}`);
+  if (!res.ok) throw new Error(`quotes fetch failed: ${res.status}`);
+  return res.json();
+}
+
 export async function getPrices(symbol: string, interval = "1d", range = "1y") {
   const params = new URLSearchParams({ symbol, interval, range });
   const res = await fetch(`${API_PREFIX}/prices?${params.toString()}`);
@@ -91,6 +98,7 @@ export type ScreenerFilters = {
   industries?: string[];
   exchanges?: string[];
   types?: string[];
+  actions?: string[];
 };
 
 export async function runScreenerWithPage(
@@ -112,6 +120,8 @@ export async function runScreenerWithPage(
       params.set("exchange", filters.exchanges.join(","));
     if (filters.types && filters.types.length > 0)
       params.set("type", filters.types.join(","));
+    if (filters.actions && filters.actions.length > 0)
+      params.set("action", filters.actions.join(","));
   }
 
   const res = await fetch(`${API_PREFIX}/screener?${params.toString()}`, {
@@ -143,6 +153,7 @@ export async function getMacroData() {
 
 export default {
   getQuote,
+  getQuotes,
   getPrices,
   getSymbols, // deprecated
   getWatchlist,

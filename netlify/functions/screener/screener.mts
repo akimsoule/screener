@@ -28,8 +28,10 @@ export default async function handler(request: Request, context: Context) {
     const industries = parseList("industry");
     const exchanges = parseList("exchange");
     const types = parseList("type");
+    const actions = parseList("action");
 
     // If any filters are present, load symbol metadata from the DB to apply server-side filtering
+    // Note: action is filtered from report directly, not from DB
     let metaByName: Record<string, any> = {};
     if (
       sectors.length ||
@@ -60,7 +62,8 @@ export default async function handler(request: Request, context: Context) {
         !sectors.length &&
         !industries.length &&
         !exchanges.length &&
-        !types.length
+        !types.length &&
+        !actions.length
       )
         return true;
       const name = (r.symbol || "").toUpperCase();
@@ -74,15 +77,31 @@ export default async function handler(request: Request, context: Context) {
         return values.some((s) => s.toUpperCase() === v.toUpperCase());
       };
 
+      // Check action directly from report (not from DB)
+      const checkAction = (values: string[]) => {
+        if (!values.length) return null; // groupe inactif
+        const reportAction = (r.action || "") as string;
+        if (!reportAction) return false; // pas d'action dans le report
+        // compare case-insensitive
+        return values.some(
+          (s) => s.toUpperCase() === reportAction.toUpperCase(),
+        );
+      };
+
       const okSector = check(sectors, "sector");
       const okIndustry = check(industries, "industry");
       const okExchange = check(exchanges, "exchange");
       const okType = check(types, "type");
+      const okAction = checkAction(actions);
 
       // OR across groups: item inclus si au moins un groupe actif match
-      const activeChecks = [okSector, okIndustry, okExchange, okType].filter(
-        (v) => v !== null,
-      );
+      const activeChecks = [
+        okSector,
+        okIndustry,
+        okExchange,
+        okType,
+        okAction,
+      ].filter((v) => v !== null);
       if (activeChecks.length === 0) return true; // aucun filtre actif
       return activeChecks.some((v) => v === true);
     });

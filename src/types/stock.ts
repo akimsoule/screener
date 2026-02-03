@@ -31,6 +31,7 @@ export interface WatchlistItem {
   industry?: string | null;
   exchange?: string | null;
   type?: string | null;
+  action?: string | null;
   isPopular?: boolean;
   inWatchlist?: boolean;
   symbolId?: string;

@@ -81,13 +81,23 @@ export default async function handler(request: Request, context: Context) {
       select: { type: true },
     });
 
+    const actionsRows = await prisma.symbol.findMany({
+      where: {
+        id: { in: symbolIds },
+        action: { not: null },
+      },
+      distinct: ["action"],
+      select: { action: true },
+    });
+
     const sectors = sectorsRows.map((r) => r.sector!).filter(Boolean);
     const industries = industriesRows.map((r) => r.industry!).filter(Boolean);
     const exchanges = exchangesRows.map((r) => r.exchange!).filter(Boolean);
     const types = typesRows.map((r) => r.type!).filter(Boolean);
+    const actions = actionsRows.map((r) => r.action!).filter(Boolean);
 
     return new Response(
-      JSON.stringify({ sectors, industries, exchanges, types }),
+      JSON.stringify({ sectors, industries, exchanges, types, actions }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (err) {

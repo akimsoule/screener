@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   TrendingUp,
   Activity,
@@ -58,12 +58,15 @@ export default function Index() {
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [selectedExchanges, setSelectedExchanges] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [selectedActions, setSelectedActions] = useState<string[]>([]);
 
   // Watchlist (now from API)
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const watchlistLoadedRef = useRef(false);
 
   // Load watchlist data from API
   useEffect(() => {
+    if (watchlistLoadedRef.current) return;
     const loadWatchlist = async () => {
       try {
         const data = await getWatchlist(token);
@@ -79,6 +82,7 @@ export default function Index() {
           industry: s.industry,
           exchange: s.exchange,
           type: s.type,
+          action: s.action,
           isPopular: s.isPopular,
           inWatchlist: s.inWatchlist,
           symbolId: s.id,
@@ -86,28 +90,39 @@ export default function Index() {
 
         setWatchlist(items);
 
-        // Fetch quotes for each symbol
-        const updatedItems = await Promise.all(
-          items.map(async (item) => {
-            try {
-              const quote = await getQuote(item.symbol);
-              return {
-                ...item,
-                name: quote.name || item.name,
-                price: quote.price || item.price,
-                change: quote.change || item.change,
-                changePercent: quote.changePercent || item.changePercent,
-              };
-            } catch (error) {
-              console.error(`Failed to load quote for ${item.symbol}:`, error);
-              return item;
-            }
-          }),
-        );
+        // Fetch quotes for all symbols in a single batch call
+        if (items.length > 0) {
+          try {
+            const { getQuotes } = await import("@/lib/netlifyApi");
+            const symbols = items.map((item) => item.symbol);
+            const quotesData = await getQuotes(symbols);
 
-        setWatchlist(updatedItems);
+            const updatedItems = items.map((item) => {
+              const quote = quotesData[item.symbol];
+              if (quote) {
+                return {
+                  ...item,
+                  name: quote.name || item.name,
+                  price: quote.price || item.price,
+                  change: quote.change || item.change,
+                  changePercent: quote.changePercent || item.changePercent,
+                };
+              }
+              return item;
+            });
+
+            setWatchlist(updatedItems);
+            watchlistLoadedRef.current = true;
+          } catch (error) {
+            console.error("Failed to load quotes:", error);
+            watchlistLoadedRef.current = true;
+          }
+        } else {
+          watchlistLoadedRef.current = true;
+        }
       } catch (error) {
         console.error("Failed to load watchlist:", error);
+        watchlistLoadedRef.current = true;
         toast({
           title: "Erreur",
           description: "Impossible de charger la watchlist",
@@ -129,23 +144,24 @@ export default function Index() {
         description: "Fetching latest prices...",
       });
 
-      const updatedItems = await Promise.all(
-        watchlist.map(async (item) => {
-          try {
-            const quote = await getQuote(item.symbol);
-            return {
-              ...item,
-              name: quote.name || item.name,
-              price: quote.price || item.price,
-              change: quote.change || item.change,
-              changePercent: quote.changePercent || item.changePercent,
-            };
-          } catch (error) {
-            console.error(`Failed to refresh data for ${item.symbol}:`, error);
-            return item; // Return original item if fetch fails
-          }
-        }),
-      );
+      // Fetch all quotes in a single batch call
+      const { getQuotes } = await import("@/lib/netlifyApi");
+      const symbols = watchlist.map((item) => item.symbol);
+      const quotesData = await getQuotes(symbols);
+
+      const updatedItems = watchlist.map((item) => {
+        const quote = quotesData[item.symbol];
+        if (quote) {
+          return {
+            ...item,
+            name: quote.name || item.name,
+            price: quote.price || item.price,
+            change: quote.change || item.change,
+            changePercent: quote.changePercent || item.changePercent,
+          };
+        }
+        return item;
+      });
 
       setWatchlist(updatedItems);
       toast({
@@ -190,7 +206,7 @@ export default function Index() {
         });
 
         // Ajouter via l'API avec token
-        const { addSymbol } = await import("@/lib/netlifyApi");
+        const { addSymbol, getQuotes } = await import("@/lib/netlifyApi");
         await addSymbol(symbol, token);
 
         // Recharger la watchlist
@@ -205,12 +221,36 @@ export default function Index() {
           industry: s.industry,
           exchange: s.exchange,
           type: s.type,
+          action: s.action,
           isPopular: s.isPopular,
           inWatchlist: s.inWatchlist,
           symbolId: s.id,
         }));
 
-        setWatchlist(items);
+        // Fetch quotes in batch
+        if (items.length > 0) {
+          const symbols = items.map((item) => item.symbol);
+          const quotesData = await getQuotes(symbols);
+
+          const updatedItems = items.map((item) => {
+            const quote = quotesData[item.symbol];
+            if (quote) {
+              return {
+                ...item,
+                name: quote.name || item.name,
+                price: quote.price || item.price,
+                change: quote.change || item.change,
+                changePercent: quote.changePercent || item.changePercent,
+              };
+            }
+            return item;
+          });
+
+          setWatchlist(updatedItems);
+        } else {
+          setWatchlist(items);
+        }
+
         setCurrentPage(1);
 
         toast({
@@ -279,17 +319,23 @@ export default function Index() {
   const [availableIndustries, setAvailableIndustries] = useState<string[]>([]);
   const [availableExchanges, setAvailableExchanges] = useState<string[]>([]);
   const [availableTypes, setAvailableTypes] = useState<string[]>([]);
+  const [availableActions, setAvailableActions] = useState<string[]>([]);
+  const filtersLoadedRef = useRef(false);
 
   useEffect(() => {
+    if (filtersLoadedRef.current) return;
     const loadFilters = async () => {
       try {
         const res = await getFilters(token);
-        setAvailableSectors(res.sectors || []);
-        setAvailableIndustries(res.industries || []);
-        setAvailableExchanges(res.exchanges || []);
-        setAvailableTypes(res.types || []);
+        setAvailableSectors((res.sectors || []).sort());
+        setAvailableIndustries((res.industries || []).sort());
+        setAvailableExchanges((res.exchanges || []).sort());
+        setAvailableTypes((res.types || []).sort());
+        setAvailableActions((res.actions || []).sort());
+        filtersLoadedRef.current = true;
       } catch (err) {
         console.error("Failed to load filters:", err);
+        filtersLoadedRef.current = true;
       }
     };
 
@@ -304,16 +350,18 @@ export default function Index() {
 
     // OR within each group (multiple chips in same group),
     // OR across groups: if any group has selections, include items matching at least one group.
-    const sector = (item as any).sector || "Unknown";
-    const industry = (item as any).industry || "Unknown";
-    const exchange = (item as any).exchange || "Unknown";
-    const type = (item as any).type || "Unknown";
+    const sector = item.sector || "Unknown";
+    const industry = item.industry || "Unknown";
+    const exchange = item.exchange || "Unknown";
+    const type = item.type || "Unknown";
+    const action = item.action || null;
 
     const anyFilterSelected =
       selectedSectors.length > 0 ||
       selectedIndustries.length > 0 ||
       selectedExchanges.length > 0 ||
-      selectedTypes.length > 0;
+      selectedTypes.length > 0 ||
+      selectedActions.length > 0;
 
     const matchesAnyGroup = (() => {
       if (!anyFilterSelected) return true;
@@ -324,7 +372,11 @@ export default function Index() {
       const okExchange =
         selectedExchanges.length > 0 && selectedExchanges.includes(exchange);
       const okType = selectedTypes.length > 0 && selectedTypes.includes(type);
-      return okSector || okIndustry || okExchange || okType;
+      const okAction =
+        selectedActions.length > 0 &&
+        action !== null &&
+        selectedActions.includes(action);
+      return okSector || okIndustry || okExchange || okType || okAction;
     })();
 
     return matchesSearch && matchesAnyGroup;
@@ -367,6 +419,14 @@ export default function Index() {
     setSelectedTypes((prev) => {
       if (prev.includes(t)) return prev.filter((s) => s !== t);
       return [...prev, t];
+    });
+    setCurrentPage(1);
+  };
+
+  const toggleAction = (a: string) => {
+    setSelectedActions((prev) => {
+      if (prev.includes(a)) return prev.filter((s) => s !== a);
+      return [...prev, a];
     });
     setCurrentPage(1);
   };
@@ -473,6 +533,7 @@ export default function Index() {
                       setSelectedIndustries([]);
                       setSelectedExchanges([]);
                       setSelectedTypes([]);
+                      setSelectedActions([]);
                     }
                     setFiltersOpen((v) => !v);
                   }}
@@ -653,6 +714,41 @@ export default function Index() {
                       </button>
                     )}
                   </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-2 items-center flex-wrap w-full">
+                    <div className="text-sm font-medium mr-2">Action:</div>
+                    {availableActions.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">
+                        No actions
+                      </div>
+                    ) : (
+                      availableActions.map((a) => {
+                        const active = selectedActions.includes(a);
+                        return (
+                          <button
+                            key={a}
+                            onClick={() => toggleAction(a)}
+                            className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                              active
+                                ? "bg-primary text-white border-primary"
+                                : "bg-secondary text-muted-foreground border-border"
+                            }`}
+                          >
+                            {a}
+                          </button>
+                        );
+                      })
+                    )}
+                    {selectedActions.length > 0 && (
+                      <button
+                        onClick={() => setSelectedActions([])}
+                        className="px-3 py-1 rounded-full text-sm border bg-transparent text-muted-foreground"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -675,6 +771,7 @@ export default function Index() {
               industries={selectedIndustries}
               exchanges={selectedExchanges}
               types={selectedTypes}
+              actions={selectedActions}
               reportsPerPage={reportsPerPage}
             />
           </TabsContent>

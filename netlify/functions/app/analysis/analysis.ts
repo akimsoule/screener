@@ -141,12 +141,17 @@ function detectRegime(ohlc: OHLC[]): Regime {
  * Adapté pour une application de recommandations (sans gestion de portefeuille)
  */
 async function assessRisk(
+  symbol: string,
   price: number,
   atr: number,
   score: number,
-  config: RiskConfig = DEFAULT_RISK_CONFIG,
-  lastCandle?: OHLC,
+  accountValue: number,
+  opts?: { config?: RiskConfig; macroRegime?: MacroRegime; lastCandle?: OHLC },
 ): Promise<RiskAssessment> {
+  const config = opts?.config || DEFAULT_RISK_CONFIG;
+  const macroRegime = opts?.macroRegime;
+  const lastCandle = opts?.lastCandle;
+
   const flags: string[] = [];
   let riskPercent = config.maxRiskPerTrade;
   let approved = true;
@@ -176,6 +181,22 @@ async function assessRisk(
   if (atrPercent > REGIME_THRESHOLDS.ATR_PERCENT_EXTREME) {
     flags.push(`VOLATILITE_EXCESSIVE (${atrPercent.toFixed(1)}%)`);
     riskPercent *= 0.7;
+  }
+
+  // 🔴 FILTRE CRITIQUE : Or + dollar strengthening = refuser trade
+  const upper = symbol.toUpperCase();
+  const isGold =
+    upper.includes("GC") || upper.includes("XAU") || upper.includes("GLD");
+  if (isGold && macroRegime?.dollarRegime === "STRENGTHENING") {
+    flags.push("OR_DOLLAR_CONFLICT (DXY strengthening → or bearish)");
+    approved = false;
+  }
+
+  // 🔴 FILTRE : Late cycle + crypto = réduire exposition
+  const isCrypto = ASSET_PATTERNS.CRYPTO.some((x) => upper.includes(x));
+  if (isCrypto && macroRegime?.cycleStage === "LATE_CYCLE") {
+    flags.push("LATE_CYCLE_CRYPTO_RISK");
+    riskPercent *= 0.4; // Réduire de 60%
   }
 
   // ✅ Filtre 3 : Confiance minimale
@@ -592,7 +613,7 @@ export async function analyzeSymbol(
   if (macroRegime) {
     const macroFlags = computeMacroRegimeFlags(macroRegime);
     riskFlags.push(...macroFlags);
-    liotBias = calculateLiotBias(symbol, macroRegime, metadata);
+    liotBias = calculateLiotBias(symbol, macroRegime, metadata, price);
     finalRawScore = rawScore + liotBias;
   }
 
@@ -610,11 +631,12 @@ export async function analyzeSymbol(
 
   /* Évaluation de la qualité du signal */
   const riskAssessment = await assessRisk(
+    symbol,
     price,
     atr,
     score,
-    config,
-    dailyOhlc.at(-1),
+    accountValue,
+    { config, macroRegime, lastCandle: dailyOhlc.at(-1) },
   );
 
   /* Recommandation */
@@ -686,10 +708,34 @@ export async function analyzeSymbol(
 /**
  * Calcule le biais macro selon le contexte Liot
  */
+function handleDollarBiasForGold(
+  symbol: string,
+  macroRegime: MacroRegime,
+  price: number = 0,
+): number {
+  const upper = symbol.toUpperCase();
+  const isGold =
+    upper.includes("GC") ||
+    upper.includes("XAU") ||
+    upper.includes("GLD") ||
+    upper.includes("GOLD");
+  if (!isGold) return 0;
+
+  if (macroRegime.dollarRegime === "STRENGTHENING") {
+    // Or est très sensible au dollar qui se renforce
+    return -25;
+  }
+  if (macroRegime.dollarRegime === "WEAK") {
+    return 20;
+  }
+  return 0;
+}
+
 function calculateLiotBias(
   symbol: string,
   macroRegime: MacroRegime,
   metadata?: SymbolMetadata,
+  currentPrice?: number,
 ): number {
   const assetClass = getAssetClass(symbol, metadata);
 
@@ -698,6 +744,7 @@ function calculateLiotBias(
     handleCycleBias(assetClass, macroRegime) +
     handlePhaseBias(assetClass, macroRegime) +
     handleDollarBias(assetClass, macroRegime) +
+    handleDollarBiasForGold(symbol, macroRegime, currentPrice) +
     handleSeasonalityBias(assetClass)
   );
 }

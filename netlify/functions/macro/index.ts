@@ -1,7 +1,20 @@
 import type { Context } from "@netlify/functions";
 import { detectMacroRegime } from "../app/analysis/macroRegime";
 import { calculateAssetClassBias } from "../app/analysis/assetClassBias";
-import { fetchQuote, fetchCloses } from "../lib/yahoo";
+import { fetchQuote, fetchCloses } from "../lib/provider/dataProvider";
+
+interface QuoteResult {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  volume: number;
+  high: number;
+  low: number;
+  open: number;
+  previousClose: number;
+}
 
 /**
  * Récupère une série économique depuis FRED API
@@ -22,8 +35,8 @@ async function fetchFredSeries(
     const data = await response.json();
     const observations = data.observations || [];
     if (observations.length === 0) return null;
-    const value = parseFloat(observations[0].value);
-    return isNaN(value) ? null : value;
+    const value = Number.parseFloat(observations[0].value);
+    return Number.isNaN(value) ? null : value;
   } catch (error) {
     console.error(`Failed to fetch FRED series ${seriesId}:`, error);
     return null;
@@ -45,10 +58,11 @@ async function fetchFredGrowthYoY(
     const observations = data.observations || [];
     if (observations.length < 13) return null;
 
-    const latest = parseFloat(observations[0].value);
-    const yearAgo = parseFloat(observations[12].value);
+    const latest = Number.parseFloat(observations[0].value);
+    const yearAgo = Number.parseFloat(observations[12].value);
 
-    if (isNaN(latest) || isNaN(yearAgo) || yearAgo === 0) return null;
+    if (Number.isNaN(latest) || Number.isNaN(yearAgo) || yearAgo === 0)
+      return null;
     return ((latest - yearAgo) / yearAgo) * 100;
   } catch (error) {
     console.error(`Failed to calculate YoY growth for ${seriesId}:`, error);
@@ -67,9 +81,9 @@ async function fetchRealMacroData() {
     // Données Yahoo Finance (toujours disponibles)
     const [dxyCloses, vixQuote, spyQuote, goldQuote] = await Promise.all([
       fetchCloses("DX-Y.NYB", "1d", "3mo"),
-      fetchQuote("^VIX"),
-      fetchQuote("SPY"),
-      fetchQuote("GLD"),
+      fetchQuote("^VIX") as Promise<QuoteResult>,
+      fetchQuote("SPY") as Promise<QuoteResult>,
+      fetchQuote("GLD") as Promise<QuoteResult>,
     ]);
 
     const dxyMomentum =
@@ -107,7 +121,7 @@ async function fetchRealMacroData() {
     }
 
     if (!m2Growth) {
-      m2Growth = vixLevel < 20 ? 6.5 : 4.0;
+      m2Growth = vixLevel < 20 ? 6.5 : 4;
     }
 
     if (!fedFundsRate) {

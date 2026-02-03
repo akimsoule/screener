@@ -36,6 +36,23 @@ export async function runAnalysis() {
       }
     });
 
+    // Mettre à jour les actions en base de données pour chaque symbole analysé
+    const updatePromises = reports
+      .filter((report) => report.symbol && report.action)
+      .map((report) =>
+        prisma.symbol
+          .update({
+            where: { name: report.symbol },
+            data: { action: report.action },
+          })
+          .catch((err) => {
+            console.error(`Failed to update action for ${report.symbol}:`, err);
+          }),
+      );
+
+    await Promise.all(updatePromises);
+    console.log(`✅ Updated actions for ${updatePromises.length} symbols`);
+
     // Trier les reports par score absolu décroissant
     reports.sort((a, b) => Math.abs(b.score || 0) - Math.abs(a.score || 0));
 

@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma";
-import { fetchSymbolDetails } from "../lib/yahoo";
+import { fetchSymbolDetails } from "../lib/provider/dataProvider";
 import { cache } from "../lib/cache";
 
 /**

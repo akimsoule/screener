@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Plus,
   RefreshCw,
@@ -45,6 +45,7 @@ interface WatchlistProps {
   industries?: string[];
   exchanges?: string[];
   types?: string[];
+  actions?: string[];
   reportsPerPage?: number;
   isAuthenticated?: boolean;
   token?: string | null;
@@ -67,6 +68,7 @@ export function Watchlist({
   industries = [],
   exchanges = [],
   types = [],
+  actions = [],
   reportsPerPage = 10,
   isAuthenticated = false,
   token = null,
@@ -80,6 +82,12 @@ export function Watchlist({
   const [reportsTotal, setReportsTotal] = useState(0);
   const [loadingReports, setLoadingReports] = useState(true);
   const { toast } = useToast();
+
+  // Stabilize filter dependencies to avoid unnecessary re-renders
+  const filterKey = useMemo(
+    () => JSON.stringify({ sectors, industries, exchanges, types, actions }),
+    [sectors, industries, exchanges, types, actions],
+  );
 
   // reportsPerPage is provided by parent (configurable in UI)
   // `reports` contains either the server page results or all results (when searching)
@@ -116,6 +124,7 @@ export function Watchlist({
             industries,
             exchanges,
             types,
+            actions,
           });
           setReports(body.reports || []);
           setReportsTotal(body.total || 0);
@@ -128,6 +137,7 @@ export function Watchlist({
           industries,
           exchanges,
           types,
+          actions,
         });
         const total = first.total || 0;
         const totalPages = Math.max(1, Math.ceil(total / reportsPerPage));
@@ -142,6 +152,7 @@ export function Watchlist({
               industries,
               exchanges,
               types,
+              actions,
             }),
           );
         }
@@ -163,15 +174,7 @@ export function Watchlist({
     };
 
     loadReports();
-  }, [
-    currentPage,
-    searchTerm,
-    sectors,
-    industries,
-    exchanges,
-    types,
-    reportsPerPage,
-  ]);
+  }, [currentPage, searchTerm, filterKey, reportsPerPage]);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,6 +227,7 @@ export function Watchlist({
         industries,
         exchanges,
         types,
+        actions,
       });
       const fetchedReports = body.reports || [];
       setReports(fetchedReports);
@@ -231,7 +235,15 @@ export function Watchlist({
     } catch (err) {
       console.error("Failed to fetch screener:", err);
     }
-  }, [reportsPerPage, sectors, industries, exchanges, types, onRefresh]);
+  }, [
+    reportsPerPage,
+    sectors,
+    industries,
+    exchanges,
+    types,
+    actions,
+    onRefresh,
+  ]);
 
   const handleDeleteSymbol = useCallback(
     async (symbol: string) => {
@@ -249,6 +261,7 @@ export function Watchlist({
             industries,
             exchanges,
             types,
+            actions,
           });
           const fetchedReports = body.reports || [];
           setReports(fetchedReports);

@@ -1,6 +1,6 @@
 // prices.ts
 // Retrieve price series from Yahoo Finance
-import { fetchOHLC, fetchQuote } from "../../lib/yahoo";
+import { fetchOHLC, fetchQuote } from "../../lib/provider/yahoo";
 import { prisma } from "../../lib/prisma";
 import type { OHLC } from "./types";
 

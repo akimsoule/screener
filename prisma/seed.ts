@@ -1,5 +1,5 @@
 import { prisma } from "../netlify/functions/lib/prisma";
-import { fetchSuggestions } from "../netlify/functions/lib/yahoo";
+import { fetchSuggestions } from "../netlify/functions/lib/provider/finnhub";
 
 async function main() {
   // Symboles populaires visibles par tous

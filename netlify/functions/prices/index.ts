@@ -1,4 +1,4 @@
-import { fetchChart } from "../lib/yahoo";
+import { fetchChart } from "../lib/provider/dataProvider";
 
 export default async function handler(request: Request) {
   try {
@@ -35,7 +35,10 @@ export default async function handler(request: Request) {
             : "1y";
 
     const result = await fetchChart(symbol, yahooInterval, yahooRange);
-    if (!result) return new Response(JSON.stringify({ error: "No data found" }), { status: 404 });
+    if (!result)
+      return new Response(JSON.stringify({ error: "No data found" }), {
+        status: 404,
+      });
 
     const timestamps = result.timestamp || [];
     const quotes = result.indicators?.quote?.[0] || {};
