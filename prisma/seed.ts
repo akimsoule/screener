@@ -1,6 +1,15 @@
 import { prisma } from "../netlify/functions/lib/prisma";
 import { fetchSuggestions } from "../netlify/functions/lib/provider/finnhub";
 
+type Suggestion = {
+  symbol?: string;
+  name?: string;
+  exchange?: string;
+  type?: string;
+  industry?: string;
+  sector?: string;
+};
+
 // Helper pour traiter les items par batch afin d'éviter le rate limiting
 async function processBatch<T, R>(
   items: T[],
@@ -21,7 +30,7 @@ async function processBatch<T, R>(
 
     // Délai entre les batches (sauf pour le dernier)
     if (i + batchSize < items.length) {
-      await new Promise((r) => setTimeout(r, delayMs));
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
     }
   }
 
@@ -69,10 +78,10 @@ async function main() {
 
   const backfillProcessor = async (row: (typeof missing)[0]) => {
     try {
-      const suggestions = await fetchSuggestions(row.name);
+      const suggestions: Suggestion[] = await fetchSuggestions(row.name);
       const match =
         suggestions.find(
-          (s: any) => s.symbol?.toUpperCase() === row.name.toUpperCase(),
+          (s) => s.symbol?.toUpperCase() === row.name.toUpperCase(),
         ) || suggestions[0];
       if (!match) return null;
 
@@ -108,10 +117,10 @@ async function main() {
     } = {};
 
     try {
-      const suggestions = await fetchSuggestions(name);
+      const suggestions: Suggestion[] = await fetchSuggestions(name);
       const match =
         suggestions.find(
-          (s: any) => s.symbol?.toUpperCase() === name.toUpperCase(),
+          (s) => s.symbol?.toUpperCase() === name.toUpperCase(),
         ) || suggestions[0];
       if (match) {
         details = {
@@ -153,5 +162,14 @@ async function main() {
   );
 }
 
-await main();
-await prisma.$disconnect();
+main()
+  .then(async () => {
+    await prisma.$disconnect();
+    console.log("Seed completed successfully.");
+    process.exit(0);
+  })
+  .catch(async (error) => {
+    console.error("Seed failed:", error);
+    await prisma.$disconnect();
+    process.exit(1);
+  });
