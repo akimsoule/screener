@@ -408,6 +408,24 @@ export function Watchlist({
     [formatRecommendationLong, toast],
   );
 
+  if (loading) {
+    return (
+      <Card className="glass-card h-full">
+        <CardHeader className="flex flex-row items-center justify-between pb-4">
+          <CardTitle className="text-lg">Watchlist</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8">
+            <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">
+              Chargement des rapports...
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="glass-card h-full">
       <CardHeader className="flex flex-row items-center justify-between pb-4">

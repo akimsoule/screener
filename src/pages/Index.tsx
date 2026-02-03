@@ -67,11 +67,13 @@ export default function Index() {
   // Watchlist (now from API)
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const watchlistLoadedRef = useRef(false);
+  const [loadingWatchlist, setLoadingWatchlist] = useState(true);
 
   // Load watchlist data from API
   useEffect(() => {
     if (watchlistLoadedRef.current) return;
     const loadWatchlist = async () => {
+      setLoadingWatchlist(true);
       try {
         const data = await getWatchlist(token);
 
@@ -120,13 +122,17 @@ export default function Index() {
           } catch (error) {
             console.error("Failed to load quotes:", error);
             watchlistLoadedRef.current = true;
+          } finally {
+            setLoadingWatchlist(false);
           }
         } else {
           watchlistLoadedRef.current = true;
+          setLoadingWatchlist(false);
         }
       } catch (error) {
         console.error("Failed to load watchlist:", error);
         watchlistLoadedRef.current = true;
+        setLoadingWatchlist(false);
         toast({
           title: "Erreur",
           description: "Impossible de charger la watchlist",
@@ -772,7 +778,7 @@ export default function Index() {
               token={token}
               onSelect={() => {}}
               onRefresh={handleRefreshWatchlist}
-              loading={false}
+              loading={loadingWatchlist}
               currentPage={currentPage}
               totalPages={totalPages}
               totalItems={filteredWatchlist.length}
