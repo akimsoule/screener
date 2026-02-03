@@ -1,6 +1,33 @@
 import { prisma } from "../netlify/functions/lib/prisma";
 import { fetchSuggestions } from "../netlify/functions/lib/provider/finnhub";
 
+// Helper pour traiter les items par batch afin d'éviter le rate limiting
+async function processBatch<T, R>(
+  items: T[],
+  batchSize: number,
+  delayMs: number,
+  processor: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    console.log(
+      `Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(items.length / batchSize)}...`,
+    );
+
+    const batchResults = await Promise.all(batch.map(processor));
+    results.push(...batchResults);
+
+    // Délai entre les batches (sauf pour le dernier)
+    if (i + batchSize < items.length) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+
+  return results;
+}
+
 async function main() {
   // Symboles populaires visibles par tous
   const popularSymbols = [
@@ -38,7 +65,9 @@ async function main() {
     },
   });
 
-  const backfillOps = missing.map(async (row) => {
+  console.log(`Found ${missing.length} symbol(s) needing backfill.`);
+
+  const backfillProcessor = async (row: (typeof missing)[0]) => {
     try {
       const suggestions = await fetchSuggestions(row.name);
       const match =
@@ -59,63 +88,65 @@ async function main() {
       console.error(`Failed to backfill ${row.name}:`, err);
       return null;
     }
-  });
+  };
 
-  const backfilled = await Promise.all(backfillOps);
+  // Traiter 3 symboles par batch avec délai de 2s entre les batches
+  const backfilled = await processBatch(missing, 3, 2000, backfillProcessor);
   console.log(
     `Backfilled ${backfilled.filter(Boolean).length} symbol(s) with missing info.`,
   );
 
   // 2) Upsert popular symbols (ensure they exist and are enriched)
-  const ops = await Promise.all(
-    popularSymbols.map(async (name) => {
-      let details: {
-        sector?: string | undefined;
-        industry?: string | undefined;
-        exchange?: string | undefined;
-        type?: string | undefined;
-      } = {};
+  console.log(`Processing ${popularSymbols.length} popular symbols...`);
 
-      try {
-        const suggestions = await fetchSuggestions(name);
-        const match =
-          suggestions.find(
-            (s: any) => s.symbol?.toUpperCase() === name.toUpperCase(),
-          ) || suggestions[0];
-        if (match) {
-          details = {
-            sector: match.sector || undefined,
-            industry: match.industry || undefined,
-            exchange: match.exchange || undefined,
-            type: match.type || undefined,
-          };
-        }
-      } catch (err) {
-        console.error(`Failed to fetch suggestions for ${name}:`, err);
+  const upsertProcessor = async (name: string) => {
+    let details: {
+      sector?: string | undefined;
+      industry?: string | undefined;
+      exchange?: string | undefined;
+      type?: string | undefined;
+    } = {};
+
+    try {
+      const suggestions = await fetchSuggestions(name);
+      const match =
+        suggestions.find(
+          (s: any) => s.symbol?.toUpperCase() === name.toUpperCase(),
+        ) || suggestions[0];
+      if (match) {
+        details = {
+          sector: match.sector || undefined,
+          industry: match.industry || undefined,
+          exchange: match.exchange || undefined,
+          type: match.type || undefined,
+        };
       }
+    } catch (err) {
+      console.error(`Failed to fetch suggestions for ${name}:`, err);
+    }
 
-      return prisma.symbol.upsert({
-        where: { name },
-        update: {
-          isPopular: true, // Marquer comme populaire
-          sector: details.sector || null,
-          industry: details.industry || null,
-          exchange: details.exchange || null,
-          type: details.type || null,
-        },
-        create: {
-          name,
-          isPopular: true, // Marquer comme populaire
-          sector: details.sector || null,
-          industry: details.industry || null,
-          exchange: details.exchange || null,
-          type: details.type || null,
-        },
-      });
-    }),
-  );
+    return prisma.symbol.upsert({
+      where: { name },
+      update: {
+        isPopular: true, // Marquer comme populaire
+        sector: details.sector || null,
+        industry: details.industry || null,
+        exchange: details.exchange || null,
+        type: details.type || null,
+      },
+      create: {
+        name,
+        isPopular: true, // Marquer comme populaire
+        sector: details.sector || null,
+        industry: details.industry || null,
+        exchange: details.exchange || null,
+        type: details.type || null,
+      },
+    });
+  };
 
-  const results = await Promise.all(ops);
+  // Traiter 3 symboles par batch avec délai de 2s entre les batches
+  const results = await processBatch(popularSymbols, 3, 2000, upsertProcessor);
   console.log(
     "Symboles ajoutés ou mis à jour :",
     results.map((r) => r.name),
