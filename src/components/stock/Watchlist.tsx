@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Info,
   Trash,
+  Copy,
+  Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -81,6 +83,7 @@ export function Watchlist({
   const [reports, setReports] = useState<AnalysisReport[]>([]);
   const [reportsTotal, setReportsTotal] = useState(0);
   const [loadingReports, setLoadingReports] = useState(true);
+  const [copiedSymbol, setCopiedSymbol] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Stabilize filter dependencies to avoid unnecessary re-renders
@@ -304,6 +307,8 @@ export function Watchlist({
     const rec = r.recommendation;
     if (!rec) return "";
 
+    const prefix = ["Qu'en penses-tu ?", ""];
+
     const header = [
       `📊 Analyse ${r.symbol}`,
       `Signal : ${rec.side} | Score : ${r.score} | Confiance modèle : ${r.confidence}/100`,
@@ -367,6 +372,7 @@ export function Watchlist({
     ];
 
     const lines = [
+      ...prefix,
       ...header,
       ...market,
       ...indicators,
@@ -378,6 +384,29 @@ export function Watchlist({
 
     return lines.join("\n");
   };
+
+  const handleCopyRecommendation = useCallback(
+    async (r: AnalysisReport) => {
+      try {
+        const text = formatRecommendationLong(r);
+        await navigator.clipboard.writeText(text);
+        setCopiedSymbol(r.symbol);
+        toast({
+          title: "Copié !",
+          description: `Analyse de ${r.symbol} copiée dans le presse-papier`,
+        });
+        setTimeout(() => setCopiedSymbol(null), 2000);
+      } catch (err) {
+        console.error("Failed to copy to clipboard:", err);
+        toast({
+          title: "Erreur",
+          description: "Impossible de copier dans le presse-papier",
+          variant: "destructive",
+        });
+      }
+    },
+    [formatRecommendationLong, toast],
+  );
 
   return (
     <Card className="glass-card h-full">
@@ -655,9 +684,31 @@ export function Watchlist({
                                 </div>
                                 {r.recommendation && (
                                   <div>
-                                    <p className="font-medium mb-2">
-                                      Recommandation :
-                                    </p>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <p className="font-medium">
+                                        Recommandation :
+                                      </p>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() =>
+                                          handleCopyRecommendation(r)
+                                        }
+                                        className="h-8 gap-2"
+                                      >
+                                        {copiedSymbol === r.symbol ? (
+                                          <>
+                                            <Check className="h-4 w-4" />
+                                            Copié
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Copy className="h-4 w-4" />
+                                            Copier
+                                          </>
+                                        )}
+                                      </Button>
+                                    </div>
                                     <p className="text-sm text-muted-foreground mb-2 whitespace-pre-line">
                                       {formatRecommendationLong(r)}
                                     </p>
@@ -876,9 +927,29 @@ export function Watchlist({
 
                             {r.recommendation && (
                               <div>
-                                <p className="font-medium mb-2">
-                                  Recommandation :
-                                </p>
+                                <div className="flex items-center justify-between mb-2">
+                                  <p className="font-medium">
+                                    Recommandation :
+                                  </p>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleCopyRecommendation(r)}
+                                    className="h-8 gap-2"
+                                  >
+                                    {copiedSymbol === r.symbol ? (
+                                      <>
+                                        <Check className="h-4 w-4" />
+                                        Copié
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy className="h-4 w-4" />
+                                        Copier
+                                      </>
+                                    )}
+                                  </Button>
+                                </div>
                                 <p className="text-sm text-muted-foreground mb-2 whitespace-pre-line">
                                   {formatRecommendationLong(r)}
                                 </p>
