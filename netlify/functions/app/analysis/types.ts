@@ -9,6 +9,7 @@ export type OHLC = {
 
 export type Regime = "STRONG_TREND" | "WEAK_TREND" | "RANGE" | "CHOP";
 export type TradeSide = "LONG" | "SHORT" | "NONE";
+export type VolatilityRegime = "HIGH" | "LOW" | "NORMAL";
 
 // =============== INTERFACES ===============
 
@@ -39,6 +40,12 @@ export interface TradeRecommendation {
   riskReward: number;
   sizing: PositionSizing | null;
   rationale: string;
+  holdingPeriod: {
+    min: number; // jours minimum estimés
+    max: number; // jours maximum estimés
+    target: number; // durée cible moyenne
+    description: string; // description textuelle
+  };
 }
 
 export interface AnalysisReport {
@@ -59,7 +66,7 @@ export interface AnalysisReport {
     trendWeekly: string;
     atr: number;
     atrPercent: number;
-    volatilityRegime: "LOW" | "NORMAL" | "HIGH";
+    volatilityRegime: VolatilityRegime;
   };
   recommendation: TradeRecommendation;
   metrics: {

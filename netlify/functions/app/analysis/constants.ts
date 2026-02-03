@@ -90,6 +90,24 @@ export const TRADE_PARAMS = {
   MAX_ADVERSE_EXCURSION_ATR: 2.5,
 } as const;
 
+// =============== HOLDING PERIOD ESTIMATION ===============
+
+export const HOLDING_PERIODS = {
+  // Par régime de marché
+  STRONG_TREND: { min: 15 as number, max: 60 as number, target: 30 as number },
+  WEAK_TREND: { min: 10 as number, max: 40 as number, target: 20 as number },
+  RANGE: { min: 3 as number, max: 15 as number, target: 7 as number },
+  CHOP: { min: 2 as number, max: 10 as number, target: 5 as number },
+
+  // Ajustements par volatilité (multiplicateurs)
+  HIGH_VOLATILITY_FACTOR: 0.6, // Réduire de 40% si volatile
+  LOW_VOLATILITY_FACTOR: 1.3, // Augmenter de 30% si calme
+
+  // Ajustements par qualité de setup (multiplicateurs)
+  PREMIUM_SETUP_FACTOR: 1.4, // Setup premium = tenir plus longtemps
+  WEAK_SETUP_FACTOR: 0.7, // Setup faible = sortir plus vite
+} as const;
+
 // =============== SCORING WEIGHTS ===============
 
 export const SCORE_WEIGHTS = {

@@ -9,6 +9,7 @@ import type {
   TradeRecommendation,
   MacroRegime,
   RiskAssessment,
+  VolatilityRegime,
 } from "./types";
 import {
   SCORE_THRESHOLDS,
@@ -23,6 +24,7 @@ import {
   ASSET_PATTERNS,
   DATA_REQUIREMENTS,
   DEFAULT_ACCOUNT_VALUE,
+  HOLDING_PERIODS,
 } from "./constants";
 
 // Métadonnées optionnelles du symbole (depuis BD)
@@ -255,14 +257,79 @@ function calculatePositionSize(
 
 // =============== RECOMMANDATION ===============
 
+/**
+ * Calcule la durée de détention estimée en fonction du régime, volatilité et qualité du setup
+ */
+function estimateHoldingPeriod(
+  regime: Regime,
+  volatilityRegime: VolatilityRegime,
+  score: number,
+): TradeRecommendation["holdingPeriod"] {
+  // Durée de base selon le régime
+  const baseHolding = HOLDING_PERIODS[regime];
+  let min = baseHolding.min;
+  let max = baseHolding.max;
+  let target = baseHolding.target;
+
+  // Ajustement volatilité
+  let volFactor = 1;
+  if (volatilityRegime === "HIGH") {
+    volFactor = HOLDING_PERIODS.HIGH_VOLATILITY_FACTOR;
+  } else if (volatilityRegime === "LOW") {
+    volFactor = HOLDING_PERIODS.LOW_VOLATILITY_FACTOR;
+  }
+
+  // Ajustement qualité du setup
+  let qualityFactor = 1;
+  if (Math.abs(score) >= SCORE_THRESHOLDS.STRONG_BUY) {
+    qualityFactor = HOLDING_PERIODS.PREMIUM_SETUP_FACTOR;
+  } else if (Math.abs(score) < SCORE_THRESHOLDS.BUY) {
+    qualityFactor = HOLDING_PERIODS.WEAK_SETUP_FACTOR;
+  }
+
+  // Application des facteurs
+  const combinedFactor = volFactor * qualityFactor;
+  min = Math.round(min * combinedFactor);
+  max = Math.round(max * combinedFactor);
+  target = Math.round(target * combinedFactor);
+
+  // Description textuelle
+  let description = "";
+  if (target <= 5) {
+    description = "Court terme (intraday/swing rapide)";
+  } else if (target <= 15) {
+    description = "Swing trading (quelques semaines)";
+  } else if (target <= 40) {
+    description = "Position trading (1-2 mois)";
+  } else {
+    description = "Trend following (moyen terme)";
+  }
+
+  return {
+    min: Math.max(1, min),
+    max: Math.max(2, max),
+    target: Math.max(1, target),
+    description,
+  };
+}
+
 function buildRecommendation(
   action: AnalysisReport["action"],
   price: number,
   atr: number,
   score: number,
   riskAssessment: RiskAssessment,
-  accountValue: number = DEFAULT_ACCOUNT_VALUE,
+  opts: {
+    regime: Regime;
+    volatilityRegime: VolatilityRegime;
+    accountValue?: number;
+  },
 ): TradeRecommendation {
+  const {
+    regime,
+    volatilityRegime,
+    accountValue = DEFAULT_ACCOUNT_VALUE,
+  } = opts;
   let side: "LONG" | "SHORT" | "NONE" = "NONE";
   if (action.includes("BUY")) side = "LONG";
   else if (action.includes("SELL")) side = "SHORT";
@@ -277,6 +344,12 @@ function buildRecommendation(
       riskReward: 0,
       sizing: null,
       rationale: "Aucune opportunité identifiée (score neutre)",
+      holdingPeriod: {
+        min: 0,
+        max: 0,
+        target: 0,
+        description: "N/A",
+      },
     };
   }
 
@@ -323,6 +396,9 @@ function buildRecommendation(
     rationale = `❌ Trade refusé (${riskAssessment.flags.join(", ")})`;
   }
 
+  // Calcul de la durée de détention estimée
+  const holdingPeriod = estimateHoldingPeriod(regime, volatilityRegime, score);
+
   return {
     side,
     entry: Number(entry.toFixed(2)),
@@ -331,6 +407,7 @@ function buildRecommendation(
     riskReward: baseRR,
     sizing,
     rationale,
+    holdingPeriod,
   };
 }
 
@@ -639,6 +716,14 @@ export async function analyzeSymbol(
     { config, macroRegime, lastCandle: dailyOhlc.at(-1) },
   );
 
+  // Volatility regime (calculé avant la recommandation)
+  let volatilityRegime: VolatilityRegime;
+  if (atrPercent > REGIME_THRESHOLDS.ATR_PERCENT_EXTREME)
+    volatilityRegime = "HIGH";
+  else if (atrPercent < REGIME_THRESHOLDS.ATR_PERCENT_LOW)
+    volatilityRegime = "LOW";
+  else volatilityRegime = "NORMAL";
+
   /* Recommandation */
   const recommendation = buildRecommendation(
     action,
@@ -646,7 +731,11 @@ export async function analyzeSymbol(
     atr,
     score,
     riskAssessment,
-    accountValue,
+    {
+      regime,
+      volatilityRegime,
+      accountValue,
+    },
   );
 
   /* Métriques de performance estimées */
@@ -659,14 +748,6 @@ export async function analyzeSymbol(
   const avgWin = recommendation.riskReward * TRADE_PARAMS.AVG_WIN_PENALTY;
   const avgLoss = TRADE_PARAMS.AVG_LOSS;
   const expectancy = winRateEstimate * avgWin - (1 - winRateEstimate) * avgLoss;
-
-  // Volatility regime simplified (extraction de la ternaire imbriquée)
-  let volatilityRegime: "HIGH" | "LOW" | "NORMAL";
-  if (atrPercent > REGIME_THRESHOLDS.ATR_PERCENT_EXTREME)
-    volatilityRegime = "HIGH";
-  else if (atrPercent < REGIME_THRESHOLDS.ATR_PERCENT_LOW)
-    volatilityRegime = "LOW";
-  else volatilityRegime = "NORMAL";
 
   return {
     symbol,

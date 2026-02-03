@@ -2,7 +2,7 @@
 import { detectMacroRegime } from "./macroRegime";
 import { calculateAssetClassBias } from "./assetClassBias";
 import { calculatePortfolioAllocation } from "./portfolioManager";
-import { AnalysisReport, AssetClassBias, MacroRegime } from "./types";
+import { AnalysisReport, AssetClassBias } from "./types";
 import analyzeSymbol from "./analysis";
 
 export async function analyzeSymbolWithMacro(

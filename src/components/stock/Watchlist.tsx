@@ -759,6 +759,27 @@ export function Watchlist({
                                         </span>{" "}
                                         {r.recommendation.takeProfit ?? "-"}
                                       </div>
+                                      {r.recommendation.holdingPeriod && (
+                                        <>
+                                          <div className="col-span-2">
+                                            <span className="font-medium">
+                                              Durée estimée:
+                                            </span>{" "}
+                                            {r.recommendation.holdingPeriod.target} jours
+                                            <span className="text-xs text-muted-foreground ml-1">
+                                              ({r.recommendation.holdingPeriod.min}-{r.recommendation.holdingPeriod.max}j)
+                                            </span>
+                                          </div>
+                                          <div className="col-span-2">
+                                            <span className="font-medium">
+                                              Type:
+                                            </span>{" "}
+                                            <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                                              {r.recommendation.holdingPeriod.description}
+                                            </span>
+                                          </div>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
                                 )}
@@ -996,6 +1017,27 @@ export function Watchlist({
                                     </span>{" "}
                                     {r.recommendation.takeProfit ?? "-"}
                                   </div>
+                                  {r.recommendation.holdingPeriod && (
+                                    <>
+                                      <div className="col-span-2">
+                                        <span className="font-medium">
+                                          Durée estimée:
+                                        </span>{" "}
+                                        {r.recommendation.holdingPeriod.target} jours
+                                        <span className="text-xs text-muted-foreground ml-1">
+                                          ({r.recommendation.holdingPeriod.min}-{r.recommendation.holdingPeriod.max}j)
+                                        </span>
+                                      </div>
+                                      <div className="col-span-2">
+                                        <span className="font-medium">
+                                          Type:
+                                        </span>{" "}
+                                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                                          {r.recommendation.holdingPeriod.description}
+                                        </span>
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             )}

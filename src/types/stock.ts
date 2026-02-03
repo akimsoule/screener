@@ -84,6 +84,12 @@ export interface AnalysisReport {
     stopLoss: number | null;
     takeProfit: number | null;
     riskReward: number | null;
+    holdingPeriod?: {
+      min: number;
+      max: number;
+      target: number;
+      description: string;
+    };
   };
   // Contexte macro optionnel
   macroContext?: MacroRegime;
