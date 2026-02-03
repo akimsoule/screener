@@ -3,6 +3,8 @@
  * Pas de sécurité max - juste fonctionnel pour séparer les watchlists
  */
 
+import { MUST_BE_AUTHENTICATED } from "./constants";
+
 const JWT_SECRET =
   process.env.JWT_SECRET || "screener-secret-key-change-in-prod";
 
@@ -53,6 +55,14 @@ export function extractToken(request: Request): string | null {
  * Middleware-like : vérifie l'authentification
  */
 export function requireAuth(request: Request): JWTPayload {
+  // Si l'authentification n'est pas requise, retourner un utilisateur générique
+  if (!MUST_BE_AUTHENTICATED) {
+    return {
+      userId: "anonymous",
+      email: "anonymous@localhost",
+    };
+  }
+
   const token = extractToken(request);
   if (!token) {
     throw new Error("Authentication required");

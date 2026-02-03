@@ -25,7 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { WatchlistItem } from "@/types/stock";
 import { useToast } from "@/hooks/use-toast";
 import { getWatchlist, getFilters } from "@/lib/netlifyApi";
-import { FRONT_PAGE_LIMIT } from "@/lib/Constant";
+import { FRONT_PAGE_LIMIT, MUST_BE_AUTHENTICATED } from "@/lib/Constant";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthDialog } from "@/components/auth/AuthDialog";
 
@@ -33,6 +33,10 @@ export default function Index() {
   const { toast } = useToast();
   const { user, token, logout, isAuthenticated } = useAuth();
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
+
+  // Utiliser MUST_BE_AUTHENTICATED pour déterminer si l'auth est requise
+  const authRequired = MUST_BE_AUTHENTICATED;
+  const effectiveAuth = authRequired ? isAuthenticated : true;
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -180,8 +184,8 @@ export default function Index() {
 
   const handleAddToWatchlist = useCallback(
     async (symbol: string) => {
-      // Vérifier l'authentification
-      if (!isAuthenticated) {
+      // Vérifier l'authentification uniquement si MUST_BE_AUTHENTICATED est true
+      if (authRequired && !isAuthenticated) {
         toast({
           title: "Authentification requise",
           description:
@@ -269,12 +273,12 @@ export default function Index() {
         });
       }
     },
-    [watchlist, isAuthenticated, token, toast],
+    [watchlist, authRequired, isAuthenticated, token, toast],
   );
 
   const handleRemoveFromWatchlist = useCallback(
     async (symbol: string) => {
-      if (!isAuthenticated) {
+      if (authRequired && !isAuthenticated) {
         toast({
           title: "Authentification requise",
           description: "Connectez-vous pour gérer votre watchlist",
@@ -311,7 +315,7 @@ export default function Index() {
         });
       }
     },
-    [watchlist, isAuthenticated, token, toast],
+    [watchlist, authRequired, isAuthenticated, token, toast],
   );
 
   // Available filters (loaded from server)
@@ -453,48 +457,54 @@ export default function Index() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {isAuthenticated ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-2">
-                    <User className="h-4 w-4" />
-                    <span className="hidden md:inline">{user?.email}</span>
+            {authRequired && (
+              <>
+                {isAuthenticated ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="gap-2">
+                        <User className="h-4 w-4" />
+                        <span className="hidden md:inline">{user?.email}</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuLabel>
+                        <div className="flex flex-col space-y-1">
+                          <p className="text-sm font-medium leading-none">
+                            {user?.name || "Utilisateur"}
+                          </p>
+                          <p className="text-xs leading-none text-muted-foreground">
+                            {user?.email}
+                          </p>
+                        </div>
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={logout}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>Déconnexion</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => setAuthDialogOpen(true)}
+                  >
+                    <LogIn className="h-4 w-4 mr-2" />
+                    Connexion
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">
-                        {user?.name || "Utilisateur"}
-                      </p>
-                      <p className="text-xs leading-none text-muted-foreground">
-                        {user?.email}
-                      </p>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Déconnexion</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setAuthDialogOpen(true)}
-              >
-                <LogIn className="h-4 w-4 mr-2" />
-                Connexion
-              </Button>
+                )}
+              </>
             )}
             <ThemeToggle />
           </div>
         </header>
 
-        {/* Auth Dialog */}
-        <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
+        {/* Auth Dialog - Only render if authentication is required */}
+        {authRequired && (
+          <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
+        )}
 
         {/* Main Content */}
         <Tabs defaultValue="watchlist" className="w-full min-h-[75vh]">
@@ -758,7 +768,7 @@ export default function Index() {
               searchTerm={searchTerm}
               onAdd={handleAddToWatchlist}
               onRemove={handleRemoveFromWatchlist}
-              isAuthenticated={isAuthenticated}
+              isAuthenticated={effectiveAuth}
               token={token}
               onSelect={() => {}}
               onRefresh={handleRefreshWatchlist}

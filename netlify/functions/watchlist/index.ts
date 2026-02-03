@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, extractToken, verifyToken } from "../lib/auth";
 import { fetchSymbolDetails } from "../lib/provider/dataProvider";
 import { cache } from "../lib/cache";
+import { MUST_BE_AUTHENTICATED } from "../lib/constants";
 
 interface SymbolDetails {
   symbol: string;
@@ -30,6 +31,42 @@ const SYMBOL_SELECT = {
 async function handleGetSymbols(request: Request) {
   const token = extractToken(request);
   const user = token ? verifyToken(token) : null;
+
+  // En mode sans authentification, charger tous les symboles pour l'utilisateur anonyme
+  if (!MUST_BE_AUTHENTICATED) {
+    const [popularSymbols, anonymousWatchlist] = await Promise.all([
+      prisma.symbol.findMany({
+        where: { isPopular: true },
+        select: SYMBOL_SELECT,
+      }),
+      prisma.watchlist.findMany({
+        where: { userId: "anonymous" },
+        include: {
+          symbol: { select: SYMBOL_SELECT },
+        },
+      }),
+    ]);
+
+    const symbolsMap = new Map();
+    popularSymbols.forEach((s) => {
+      symbolsMap.set(s.id, { ...s, inWatchlist: false });
+    });
+    anonymousWatchlist.forEach((w) => {
+      symbolsMap.set(w.symbol.id, { ...w.symbol, inWatchlist: true });
+    });
+
+    const symbols = Array.from(symbolsMap.values());
+    return new Response(
+      JSON.stringify({ symbols, user: { email: "anonymous@localhost" } }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
+    );
+  }
 
   if (user) {
     const [popularSymbols, userWatchlist] = await Promise.all([
@@ -89,6 +126,24 @@ async function handlePostSymbol(request: Request) {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  // En mode sans authentification, s'assurer que l'utilisateur anonymous existe
+  if (!MUST_BE_AUTHENTICATED && user.userId === "anonymous") {
+    const existingUser = await prisma.user.findUnique({
+      where: { id: "anonymous" },
+    });
+
+    if (!existingUser) {
+      await prisma.user.create({
+        data: {
+          id: "anonymous",
+          email: "anonymous@localhost",
+          password: "no-password", // Pas utilisé en mode sans auth
+          name: "Anonymous User",
+        },
+      });
+    }
   }
 
   let symbol = await prisma.symbol.findUnique({ where: { name } });

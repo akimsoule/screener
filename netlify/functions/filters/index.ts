@@ -1,6 +1,7 @@
 import type { Context } from "@netlify/functions";
 import { prisma } from "../lib/prisma";
 import { verifyToken } from "../lib/auth";
+import { MUST_BE_AUTHENTICATED } from "../lib/constants";
 import runAnalysis from "../app/index";
 
 export default async function handler(request: Request, context: Context) {
@@ -10,7 +11,10 @@ export default async function handler(request: Request, context: Context) {
     const token = authHeader?.replace("Bearer ", "");
     let userId: string | null = null;
 
-    if (token) {
+    if (!MUST_BE_AUTHENTICATED) {
+      // Mode sans authentification : utiliser l'utilisateur anonymous
+      userId = "anonymous";
+    } else if (token) {
       const payload = verifyToken(token);
       if (payload) {
         userId = payload.userId;
