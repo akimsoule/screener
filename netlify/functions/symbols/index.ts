@@ -10,7 +10,6 @@ export default async function handler(request: Request) {
   console.warn("⚠️ /symbols endpoint is deprecated. Use /watchlist instead.");
 
   try {
-    const url = new URL(request.url);
     const method = request.method.toUpperCase();
 
     if (method === "GET") {

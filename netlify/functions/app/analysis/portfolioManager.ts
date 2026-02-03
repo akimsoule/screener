@@ -12,13 +12,16 @@ export function calculatePortfolioAllocation(
     { valueUSD: number; costBasis: number; pnl90d: number }
   >,
   macroRegime: MacroRegime,
-  config: PortfolioConfig = {
+  config?: PortfolioConfig,
+): PortfolioRecommendation {
+  const defaultConfig: PortfolioConfig = {
     maxCryptoExposure: 15,
     maxEquitiesExposure: 60,
     lateCycleReduction: 0.4, // Réduire de 40% l'exposition en late cycle
     profitTakingThreshold: 80, // Prendre profits si +80% en 90j
-  },
-): PortfolioRecommendation {
+  };
+  const cfg = config ? { ...defaultConfig, ...config } : defaultConfig;
+
   const totalValue = Object.values(currentHoldings).reduce(
     (sum, h) => sum + h.valueUSD,
     0,
@@ -28,14 +31,14 @@ export function calculatePortfolioAllocation(
   const targetAllocation: Record<string, number> = {};
 
   // 🔸 Étape 1 : Ajuster les limites selon le cycle
-  let maxCrypto = config.maxCryptoExposure;
-  let maxEquities = config.maxEquitiesExposure;
+  let maxCrypto = cfg.maxCryptoExposure;
+  let maxEquities = cfg.maxEquitiesExposure;
 
   if (macroRegime.cycleStage === "LATE_CYCLE") {
-    maxCrypto *= 1 - config.lateCycleReduction;
-    maxEquities *= 1 - config.lateCycleReduction / 2;
+    maxCrypto *= 1 - cfg.lateCycleReduction;
+    maxEquities *= 1 - cfg.lateCycleReduction / 2;
     riskAlerts.push(
-      `⚠️ LATE_CYCLE détecté → réduction exposition risquée de ${config.lateCycleReduction * 100}%`,
+      `⚠️ LATE_CYCLE détecté → réduction exposition risquée de ${cfg.lateCycleReduction * 100}%`,
     );
   }
 
@@ -50,7 +53,7 @@ export function calculatePortfolioAllocation(
       assetClass = "equities";
 
     // Profit-taking si gros gain récent
-    if (holding.pnl90d > config.profitTakingThreshold) {
+    if (holding.pnl90d > cfg.profitTakingThreshold) {
       const reduction = Math.min(holding.pnl90d / 200, 0.5); // Réduire de max 50%
       targetPct = currentPct * (1 - reduction);
       actions.push({

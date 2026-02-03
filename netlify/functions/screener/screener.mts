@@ -103,7 +103,7 @@ export default async function handler(request: Request, context: Context) {
         okAction,
       ].filter((v) => v !== null);
       if (activeChecks.length === 0) return true; // aucun filtre actif
-      return activeChecks.some((v) => v === true);
+      return activeChecks.includes(true);
     });
 
     const total = filtered.length;

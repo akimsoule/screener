@@ -15,24 +15,30 @@ export default async function handler(request: Request) {
     }
 
     // Map interval to Yahoo Finance format
-    const yahooInterval =
-      interval === "1d"
-        ? "1d"
-        : interval === "1wk"
-          ? "1wk"
-          : interval === "1mo"
-            ? "1mo"
-            : "1d";
+    let yahooInterval: "1d" | "1wk" | "1mo";
+    switch (interval) {
+      case "1wk":
+        yahooInterval = "1wk";
+        break;
+      case "1mo":
+        yahooInterval = "1mo";
+        break;
+      default:
+        yahooInterval = "1d";
+    }
 
     // Map range to Yahoo Finance format
-    const yahooRange =
-      range === "1y"
-        ? "1y"
-        : range === "2y"
-          ? "2y"
-          : range === "5y"
-            ? "5y"
-            : "1y";
+    let yahooRange: "1y" | "2y" | "5y";
+    switch (range) {
+      case "2y":
+        yahooRange = "2y";
+        break;
+      case "5y":
+        yahooRange = "5y";
+        break;
+      default:
+        yahooRange = "1y";
+    }
 
     const result = await fetchChart(symbol, yahooInterval, yahooRange);
     if (!result)

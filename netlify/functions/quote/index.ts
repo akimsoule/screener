@@ -38,7 +38,8 @@ export default async function handler(request: Request) {
       },
     });
   } catch (error) {
-    console.error(`Quote API error${symbol ? ` for ${symbol}` : ""}:`, error);
+    const msg = symbol ? `Quote API error for ${symbol}:` : "Quote API error:";
+    console.error(msg, error);
     return new Response(
       JSON.stringify({
         error: (error as Error).message || "Failed to fetch quote",

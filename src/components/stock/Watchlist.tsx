@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Plus,
   RefreshCw,
@@ -33,7 +33,7 @@ interface WatchlistProps {
   searchTerm?: string;
   onAdd: (symbol: string) => void;
   onRemove: (symbol: string) => void;
-  onSelect: (symbol: string) => void;
+  onSelect?: (symbol: string) => void;
   onRefresh: () => void;
   loading?: boolean;
   currentPage?: number;
@@ -72,7 +72,7 @@ export function Watchlist({
   reportsPerPage = 10,
   isAuthenticated = false,
   token = null,
-}: WatchlistProps) {
+}: Readonly<WatchlistProps>) {
   const [newSymbol, setNewSymbol] = useState("");
   const [suggestions, setSuggestions] = useState<
     { symbol: string; name?: string }[]
@@ -94,6 +94,13 @@ export function Watchlist({
   const filteredReports = reports.filter((r) =>
     r.symbol.toLowerCase().includes(searchTerm.toLowerCase()),
   );
+
+  const getActionClass = (action?: string) => {
+    if (!action) return "bg-secondary text-muted-foreground";
+    if (action.includes("ACHAT")) return "bg-gain/20 text-gain";
+    if (action.includes("VENTE")) return "bg-loss/20 text-loss";
+    return "bg-secondary text-muted-foreground";
+  };
 
   // If a search is active we compute total pages from the filtered set (client-side pagination).
   // Otherwise rely on server-provided total count.
@@ -176,7 +183,7 @@ export function Watchlist({
     loadReports();
   }, [currentPage, searchTerm, filterKey, reportsPerPage]);
 
-  const handleAdd = (e: React.FormEvent) => {
+  const handleAdd = (e: any) => {
     e.preventDefault();
     if (newSymbol.trim()) {
       onAdd(newSymbol.trim().toUpperCase());
@@ -198,7 +205,7 @@ export function Watchlist({
         setLoadingSuggestions(true);
         const res = await searchSymbols(q);
         if (cancelled) return;
-        setSuggestions((res && res.suggestions) || []);
+        setSuggestions(res?.suggestions ?? []);
       } catch (err) {
         console.error("Failed to fetch suggestions:", err);
         setSuggestions([]);
@@ -214,12 +221,8 @@ export function Watchlist({
   }, [newSymbol]);
 
   const handleRefresh = useCallback(async () => {
-    try {
-      // call existing prop so parent can react
-      onRefresh();
-    } catch (e) {
-      // ignore
-    }
+    // call existing prop so parent can react
+    onRefresh();
 
     try {
       const body = await runScreenerWithPage(1, reportsPerPage, {
@@ -301,80 +304,77 @@ export function Watchlist({
     const rec = r.recommendation;
     if (!rec) return "";
 
-    const lines: string[] = [];
-
-    // ===== HEADER =====
-    lines.push(`📊 Analyse ${r.symbol}`);
-    lines.push(
+    const header = [
+      `📊 Analyse ${r.symbol}`,
       `Signal : ${rec.side} | Score : ${r.score} | Confiance modèle : ${r.confidence}/100`,
-    );
-    lines.push("");
+      "",
+    ];
 
-    // ===== MARKET CONTEXT =====
     const regimeDesc =
       r.regime === "TREND"
         ? "Marché directionnel (tendance claire)"
         : "Marché instable / volatil";
 
-    lines.push(`🧭 Contexte de marché`);
-    lines.push(`• Régime : ${regimeDesc}`);
-    lines.push(`• Tendance daily : ${r.details.trendDaily}`);
-    lines.push(`• Tendance weekly : ${r.details.trendWeekly}`);
-    lines.push("");
+    const market = [
+      "🧭 Contexte de marché",
+      `• Régime : ${regimeDesc}`,
+      `• Tendance daily : ${r.details.trendDaily}`,
+      `• Tendance weekly : ${r.details.trendWeekly}`,
+      "",
+    ];
 
-    // ===== INDICATORS =====
-    lines.push(`📈 Indicateurs`);
-    lines.push(`• Prix actuel : $${r.details.price.toFixed(2)}`);
-    lines.push(`• RSI : ${r.details.rsi.toFixed(2)} (momentum neutre → sain)`);
-    lines.push(`• ATR : ${r.details.atr.toFixed(4)} (volatilité)`);
-    lines.push("");
+    const indicators = [
+      "📈 Indicateurs",
+      `• Prix actuel : $${r.details.price.toFixed(2)}`,
+      `• RSI : ${r.details.rsi.toFixed(2)} (momentum neutre → sain)`,
+      `• ATR : ${r.details.atr.toFixed(4)} (volatilité)`,
+      "",
+    ];
 
-    // ===== TRADE PLAN =====
-    lines.push(`🎯 Plan de trade`);
-    lines.push(`• Direction : ${rec.side}`);
-    lines.push(`• Zone d’entrée : ~$${rec.entry}`);
-    lines.push(`• Stop loss : $${rec.stopLoss}`);
-    lines.push(`• Take profit : $${rec.takeProfit}`);
-    lines.push(
-      `• Risk / Reward : ${rec.riskReward ? `${rec.riskReward}:1` : "N/A"}`,
-    );
+    const riskStr = rec.riskReward ? `${rec.riskReward}:1` : "N/A";
+    const tradeBase = [
+      "🎯 Plan de trade",
+      `• Direction : ${rec.side}`,
+      `• Zone d’entrée : ~$${rec.entry}`,
+      `• Stop loss : $${rec.stopLoss}`,
+      `• Take profit : $${rec.takeProfit}`,
+      `• Risk / Reward : ${riskStr}`,
+    ];
 
-    if (rec.entry && rec.stopLoss && rec.takeProfit && rec.riskReward) {
-      const risk = Math.abs(rec.entry - rec.stopLoss);
-      const reward = Math.abs(rec.takeProfit - rec.entry);
+    const tradeExtras =
+      rec.entry && rec.stopLoss && rec.takeProfit && rec.riskReward
+        ? [
+            `• Vous risquez ~$${Math.abs(rec.entry - rec.stopLoss).toFixed(2)} pour tenter de gagner ~$${Math.abs(rec.takeProfit - rec.entry).toFixed(2)}`,
+            `• Cela signifie que le trade peut rester rentable même avec ~${Math.round(100 / (rec.riskReward + 1))}% de trades gagnants`,
+          ]
+        : [];
 
-      lines.push(
-        `• Vous risquez ~$${risk.toFixed(2)} pour tenter de gagner ~$${reward.toFixed(2)}`,
-      );
+    const tradePlan = [...tradeBase, ...tradeExtras];
 
-      lines.push(
-        `• Cela signifie que le trade peut rester rentable même avec ~${Math.round(
-          100 / (rec.riskReward + 1),
-        )}% de trades gagnants`,
-      );
-    }
+    const interpretation = ["", "🧠 Lecture du modèle", r.interpretation, ""];
 
-    lines.push("");
+    const macroLines = r.macroContext?.phase
+      ? [
+          "🌍 Contexte macro",
+          `• Phase : ${r.macroContext.phase} (${r.macroContext.cycleStage})`,
+          `• Confiance macro : ${r.macroContext.confidence}/100`,
+          "",
+        ]
+      : [];
 
-    // ===== INTERPRETATION =====
-    lines.push(`🧠 Lecture du modèle`);
-    lines.push(r.interpretation);
-    lines.push("");
-
-    // ===== MACRO =====
-    if (r.macroContext?.phase) {
-      lines.push(`🌍 Contexte macro`);
-      lines.push(
-        `• Phase : ${r.macroContext.phase} (${r.macroContext.cycleStage})`,
-      );
-      lines.push(`• Confiance macro : ${r.macroContext.confidence}/100`);
-      lines.push("");
-    }
-
-    // ===== DISCLAIMER =====
-    lines.push(
+    const disclaimer = [
       "⚠️ Ceci est un scénario probabiliste, pas une certitude. Risquez uniquement un capital que vous pouvez perdre.",
-    );
+    ];
+
+    const lines = [
+      ...header,
+      ...market,
+      ...indicators,
+      ...tradePlan,
+      ...interpretation,
+      ...macroLines,
+      ...disclaimer,
+    ];
 
     return lines.join("\n");
   };
@@ -424,25 +424,26 @@ export function Watchlist({
                   Recherche...
                 </div>
               ) : (
-                <ul role="listbox" className="max-h-56 overflow-auto">
+                <ul className="max-h-56 overflow-auto">
                   {suggestions.map((s) => (
-                    <li
-                      key={s.symbol}
-                      role="option"
-                      className="px-3 py-2 hover:bg-secondary cursor-pointer flex justify-between items-center"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        // fill input with selected symbol
-                        setNewSymbol(s.symbol);
-                        // optionally add immediately
-                        // onAdd(s.symbol);
-                        setSuggestions([]);
-                      }}
-                    >
-                      <div className="font-mono">{s.symbol}</div>
-                      <div className="text-xs text-muted-foreground truncate ml-2">
-                        {s.name}
-                      </div>
+                    <li key={s.symbol}>
+                      <button
+                        type="button"
+                        className="w-full text-left px-3 py-2 hover:bg-secondary cursor-pointer flex justify-between items-center"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          // fill input with selected symbol
+                          setNewSymbol(s.symbol);
+                          // optionally add immediately
+                          // onAdd(s.symbol);
+                          setSuggestions([]);
+                        }}
+                      >
+                        <div className="font-mono">{s.symbol}</div>
+                        <div className="text-xs text-muted-foreground truncate ml-2">
+                          {s.name}
+                        </div>
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -531,11 +532,7 @@ export function Watchlist({
                           <span
                             className={cn(
                               "text-xs font-mono px-2 py-0.5 rounded-full",
-                              r.action.includes("ACHAT")
-                                ? "bg-gain/20 text-gain"
-                                : r.action.includes("VENTE")
-                                  ? "bg-loss/20 text-loss"
-                                  : "bg-secondary text-muted-foreground",
+                              getActionClass(r.action),
                             )}
                           >
                             {r.action}
@@ -630,11 +627,7 @@ export function Watchlist({
                                   <span
                                     className={cn(
                                       "text-sm px-2 py-1 rounded-full",
-                                      r.action.includes("ACHAT")
-                                        ? "bg-gain/20 text-gain"
-                                        : r.action.includes("VENTE")
-                                          ? "bg-loss/20 text-loss"
-                                          : "bg-secondary text-muted-foreground",
+                                      getActionClass(r.action),
                                     )}
                                   >
                                     {r.action}
@@ -770,11 +763,7 @@ export function Watchlist({
                       <span
                         className={cn(
                           "text-xs font-mono px-2 py-1 rounded-full whitespace-nowrap",
-                          r.action.includes("ACHAT")
-                            ? "bg-gain/20 text-gain"
-                            : r.action.includes("VENTE")
-                              ? "bg-loss/20 text-loss"
-                              : "bg-secondary text-muted-foreground",
+                          getActionClass(r.action),
                         )}
                       >
                         {r.action}
@@ -858,11 +847,7 @@ export function Watchlist({
                               <span
                                 className={cn(
                                   "text-sm px-2 py-1 rounded-full",
-                                  r.action.includes("ACHAT")
-                                    ? "bg-gain/20 text-gain"
-                                    : r.action.includes("VENTE")
-                                      ? "bg-loss/20 text-loss"
-                                      : "bg-secondary text-muted-foreground",
+                                  getActionClass(r.action),
                                 )}
                               >
                                 {r.action}

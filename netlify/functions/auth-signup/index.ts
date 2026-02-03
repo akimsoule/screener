@@ -1,6 +1,6 @@
 import type { Context } from "@netlify/functions";
 import { prisma } from "../lib/prisma";
-import { hashPassword, verifyPassword, createToken } from "../lib/auth";
+import { hashPassword, createToken } from "../lib/auth";
 
 export default async function handler(request: Request, context: Context) {
   if (request.method !== "POST") {

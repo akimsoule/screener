@@ -24,7 +24,7 @@ import { MacroView } from "@/components/stock/MacroView";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { WatchlistItem } from "@/types/stock";
 import { useToast } from "@/hooks/use-toast";
-import { getQuote, getWatchlist, getFilters } from "@/lib/netlifyApi";
+import { getWatchlist, getFilters } from "@/lib/netlifyApi";
 import { FRONT_PAGE_LIMIT } from "@/lib/Constant";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthDialog } from "@/components/auth/AuthDialog";
@@ -591,7 +591,7 @@ export default function Index() {
                             onClick={() => toggleSector(sector)}
                             className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                               active
-                                ? "bg-primary text-white border-primary"
+                                ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-secondary text-muted-foreground border-border"
                             }`}
                           >
@@ -626,7 +626,7 @@ export default function Index() {
                             onClick={() => toggleIndustry(industry)}
                             className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                               active
-                                ? "bg-primary text-white border-primary"
+                                ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-secondary text-muted-foreground border-border"
                             }`}
                           >
@@ -661,7 +661,7 @@ export default function Index() {
                             onClick={() => toggleExchange(exchange)}
                             className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                               active
-                                ? "bg-primary text-white border-primary"
+                                ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-secondary text-muted-foreground border-border"
                             }`}
                           >
@@ -696,7 +696,7 @@ export default function Index() {
                             onClick={() => toggleType(t)}
                             className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                               active
-                                ? "bg-primary text-white border-primary"
+                                ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-secondary text-muted-foreground border-border"
                             }`}
                           >
@@ -731,7 +731,7 @@ export default function Index() {
                             onClick={() => toggleAction(a)}
                             className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                               active
-                                ? "bg-primary text-white border-primary"
+                                ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-secondary text-muted-foreground border-border"
                             }`}
                           >

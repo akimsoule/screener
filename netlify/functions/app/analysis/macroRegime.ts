@@ -10,14 +10,14 @@ import { MacroRegime } from "./types";
  * - Momentum dollar (DXY)
  * - Momentum liquidité (M2 YoY)
  */
-export function detectMacroRegime(marketData: {
-  fedDotPlot2025: number; // ex: 3.75%
-  marketPricing2025: number; // ex: 3.70%
-  ismPmi: number; // >50 = expansion
-  dxyMomentum: number; // % change 3m
-  m2Growth: number; // YoY %
-  nfpSurprise: number; // actuel - prévu
-}): MacroRegime {
+function computeSignals(marketData: {
+  fedDotPlot2025: number;
+  marketPricing2025: number;
+  ismPmi: number;
+  dxyMomentum: number;
+  m2Growth: number;
+  nfpSurprise: number;
+}) {
   const signals = { riskOn: 0, riskOff: 0 };
 
   // 🔸 Signal 1 : Politique Fed (le cœur de l'analyse de Liot)
@@ -30,45 +30,62 @@ export function detectMacroRegime(marketData: {
   else if (marketData.ismPmi < 48) signals.riskOff += 25;
 
   // 🔸 Signal 3 : Dollar (asymétrie haussière identifiée par Liot)
-  if (marketData.dxyMomentum > 2)
-    signals.riskOff += 15; // Dollar strengthening = risk-off pressure
-  else if (marketData.dxyMomentum < -5) signals.riskOn += 10; // Weak USD = liquidity boost
+  if (marketData.dxyMomentum > 2) signals.riskOff += 15;
+  else if (marketData.dxyMomentum < -5) signals.riskOn += 10;
 
   // 🔸 Signal 4 : Liquidité M2
   if (marketData.m2Growth > 5) signals.riskOn += 20;
 
   // 🔸 Signal 5 : NFP (forward-looking mechanism de Liot)
-  if (marketData.nfpSurprise > 50000) signals.riskOff += 15; // Surprise positive → moins de cuts attendus
+  if (marketData.nfpSurprise > 50000) signals.riskOff += 15;
 
   const score = signals.riskOn - signals.riskOff;
-  const phase =
-    score > 15 ? "RISK_ON" : score < -15 ? "RISK_OFF" : "TRANSITION";
+  return { signals, fedEasing, score };
+}
+
+export function detectMacroRegime(marketData: {
+  fedDotPlot2025: number; // ex: 3.75%
+  marketPricing2025: number; // ex: 3.70%
+  ismPmi: number; // >50 = expansion
+  dxyMomentum: number; // % change 3m
+  m2Growth: number; // YoY %
+  nfpSurprise: number; // actuel - prévu
+}): MacroRegime {
+  const { fedEasing, score } = computeSignals(marketData);
+
+  // Compute phase explicitly to avoid nested ternaries
+  let phase: MacroRegime["phase"] = "TRANSITION";
+  if (score > 15) phase = "RISK_ON";
+  else if (score < -15) phase = "RISK_OFF";
 
   // 🔸 Détection fin de cycle (insight clé de Liot sur Bitcoin)
-  const lateCycleSignals = [
-    marketData.ismPmi > 60 && marketData.ismPmi < marketData.ismPmi - 3, // pic puis décélération
-    marketData.m2Growth > 8, // liquidité excessive
-    marketData.dxyMomentum < -8, // dollar très faible = euphorie
-  ].filter(Boolean).length;
+  const lateCycleA = marketData.ismPmi > 60; // very high PMI
+  const lateCycleB = marketData.m2Growth > 8; // excessive liquidity
+  const lateCycleC = marketData.dxyMomentum < -8; // very weak dollar
+  const lateCycleSignals = [lateCycleA, lateCycleB, lateCycleC].filter(
+    Boolean,
+  ).length;
 
-  const cycleStage =
-    lateCycleSignals >= 2
-      ? "LATE_CYCLE"
-      : marketData.ismPmi > 52
-        ? "MID_CYCLE"
-        : "EARLY_CYCLE";
+  let cycleStage: MacroRegime["cycleStage"];
+  if (lateCycleSignals >= 2) cycleStage = "LATE_CYCLE";
+  else if (marketData.ismPmi > 52) cycleStage = "MID_CYCLE";
+  else cycleStage = "EARLY_CYCLE";
+
+  // Dollar regime
+  let dollarRegime: MacroRegime["dollarRegime"];
+  if (marketData.dxyMomentum > 2) dollarRegime = "STRENGTHENING";
+  else if (marketData.dxyMomentum < -5) dollarRegime = "WEAK";
+  else dollarRegime = "NEUTRAL";
+
+  // Liquidity
+  const liquidity = marketData.m2Growth > 5 ? "EXPANDING" : "NEUTRAL";
 
   return {
     phase,
     cycleStage,
     fedPolicy: fedEasing ? "CUTTING" : "PAUSING",
-    dollarRegime:
-      marketData.dxyMomentum > 2
-        ? "STRENGTHENING"
-        : marketData.dxyMomentum < -5
-          ? "WEAK"
-          : "NEUTRAL",
-    liquidity: marketData.m2Growth > 5 ? "EXPANDING" : "NEUTRAL",
+    dollarRegime,
+    liquidity,
     confidence: Math.abs(score) * 2,
   };
 }
