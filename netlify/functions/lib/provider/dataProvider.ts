@@ -15,6 +15,7 @@ interface QuoteResult {
   yearHigh?: number;
   yearLow?: number;
   marketCap?: number;
+  quoteType?: string; // "ETF", "EQUITY", "MUTUALFUND", etc.
 }
 
 const CACHE_TTL = {

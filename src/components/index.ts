@@ -29,3 +29,6 @@ export { ChartControls } from "./stock/ChartControls";
 export { Watchlist } from "./stock/Watchlist";
 export { MacroView } from "./stock/MacroView";
 export { AnalysisHierarchy } from "./stock/AnalysisHierarchy";
+
+// Portfolio Components
+export { PortfolioUpload } from "./portfolio/PortfolioUpload";

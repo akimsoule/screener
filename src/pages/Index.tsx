@@ -7,6 +7,7 @@ import {
   User,
   ChevronDown,
   ChevronUp,
+  Wallet,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import { getWatchlist, getFilters } from "@/lib/netlifyApi";
 import { FRONT_PAGE_LIMIT, MUST_BE_AUTHENTICATED } from "@/lib/Constant";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthDialog } from "@/components/auth/AuthDialog";
+import { Link } from "react-router-dom";
 
 export default function Index() {
   const { toast } = useToast();
@@ -463,6 +465,12 @@ export default function Index() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/portfolio" className="gap-2">
+                <Wallet className="h-4 w-4" />
+                <span className="hidden md:inline">Portefeuille</span>
+              </Link>
+            </Button>
             {authRequired && (
               <>
                 {isAuthenticated ? (

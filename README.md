@@ -1,8 +1,17 @@
 # 📈 Stock Screener Pro
 
-Un dashboard moderne de screening technique pour les marchés financiers avec une interface utilisateur élégante, des alertes Telegram en temps réel et une gestion configurable des symboles.
+Un dashboard moderne de screening technique pour les marchés financiers avec une interface utilisateur élégante, des alertes Telegram en temps réel, une gestion configurable des symboles et **une analyse complète de portefeuille Wealthsimple**.
 
 ## ✨ Fonctionnalités
+
+### 💼 Analyse de Portefeuille Wealthsimple (NOUVEAU!)
+
+- **Upload de fichiers CSV** : Importez vos exports Wealthsimple (transactions + positions)
+- **Analyse complète** : Allocation, performance, frais, diversification
+- **Score de diversification** : Évaluation 0-100 avec recommandations
+- **Détection des risques** : Concentration, leverage, frais, fiscalité
+- **Recommandations personnalisées** : Actions concrètes pour optimiser votre portefeuille
+- **Historique** : Sauvegarde et consultation des analyses précédentes
 
 ### 🎯 Analyse Technique Avancée
 
@@ -46,6 +55,7 @@ Un dashboard moderne de screening technique pour les marchés financiers avec un
 - **Prisma ORM** : Gestion base de données
 - **Yahoo Finance API** : Données de marché
 - **Technical Indicators** : Bibliothèque d'analyse
+- **CSV Parse** : Parsing des fichiers Wealthsimple
 
 ### Infrastructure
 
@@ -120,6 +130,42 @@ npm run build
 ```
 
 ## 📱 Utilisation
+
+### Analyse de Portefeuille Wealthsimple
+
+#### 1. Obtenir vos fichiers CSV
+
+1. Connectez-vous à [Wealthsimple](https://www.wealthsimple.com)
+2. **Transactions** : Activité → Exporter → `activities-export-YYYY-MM-DD.csv`
+3. **Positions** : Portefeuille → Exporter → `holdings-report-YYYY-MM-DD.csv`
+
+#### 2. Analyser votre portefeuille
+
+1. Connectez-vous à l'application
+2. Menu utilisateur → **Mon portefeuille**
+3. Uploadez les deux fichiers CSV
+4. Consultez l'analyse complète :
+   - **Vue d'ensemble** : Valeur totale, gains/pertes, frais, score de diversification
+   - **Allocation** : Répartition par compte (CELI, REER), par actif, par type
+   - **Performance** : Meilleurs/pires performers, détail par position
+   - **Diversification** : Score 0-100, analyse de concentration
+   - **Risques** : Détection automatique (concentration, leverage, frais, fiscalité)
+   - **Recommandations** : Actions concrètes pour optimiser votre portefeuille
+
+#### 3. Comprendre votre score de diversification
+
+- **70-100** : Excellent - Portefeuille bien diversifié
+- **50-69** : Bon - Quelques améliorations possibles
+- **30-49** : Moyen - Risque de concentration
+- **0-29** : Faible - Diversification insuffisante
+
+#### 4. Exemples de recommandations
+
+- **Rééquilibrage** : Réduire les positions >25% du portefeuille
+- **Diversification** : Ajouter 10-15 positions pour réduire le risque
+- **Frais** : Regrouper les achats, utiliser des ETF sans commission
+- **Fiscalité** : Maximiser CELI (7000$) et REER (18% du revenu)
+- **ETF** : Considérer VEQT, VGRO ou VBAL pour simplifier
 
 ### Gestion des Symboles
 

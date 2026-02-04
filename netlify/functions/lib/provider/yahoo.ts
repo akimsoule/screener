@@ -15,15 +15,19 @@ async function fetchWithRetry(url: string, maxRetries = 3): Promise<Response> {
       // Rate limiting (429) - attendre avant de retry
       if (res.status === 429) {
         const delay = Math.pow(2, attempt) * 1000; // backoff exponentiel
-        console.warn(`Rate limited, retrying in ${delay}ms...`);
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
 
       if (!res.ok) {
-        throw new Error(
+        lastError = new Error(
           `Yahoo Finance API error: ${res.status} ${res.statusText}`,
         );
+        if (attempt < maxRetries - 1) {
+          const delay = Math.pow(2, attempt) * 500;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+        continue;
       }
 
       return res;
@@ -31,15 +35,16 @@ async function fetchWithRetry(url: string, maxRetries = 3): Promise<Response> {
       lastError = error as Error;
       if (attempt < maxRetries - 1) {
         const delay = Math.pow(2, attempt) * 500;
-        console.warn(
-          `Fetch attempt ${attempt + 1} failed, retrying in ${delay}ms...`,
-        );
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
 
-  throw lastError || new Error("Max retries exceeded");
+  // Retourner une réponse vide si tous les tentatives échouent
+  return new Response(JSON.stringify({ chart: { result: null } }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 export async function fetchChart(
@@ -82,6 +87,7 @@ export async function fetchQuote(symbol: string) {
     low: meta.dayLow,
     open: meta.regularMarketOpen,
     previousClose: meta.chartPreviousClose,
+    quoteType: meta.quoteType, // "ETF", "EQUITY", "MUTUALFUND", etc.
   };
 }
 
@@ -125,7 +131,7 @@ export async function fetchSuggestions(query: string) {
   const res = await fetch(yahooUrl, {
     headers: { "User-Agent": "Mozilla/5.0" },
   });
-  if (!res.ok) throw new Error(`Yahoo Finance API error: ${res.status}`);
+  if (!res.ok) return [];
   const data = await res.json();
   const quotes = data.quotes || [];
   const suggestions = quotes.map((q: any) => ({
