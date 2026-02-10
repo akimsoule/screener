@@ -38,10 +38,6 @@ export default function Index() {
   const authRequired = MUST_BE_AUTHENTICATED;
   const effectiveAuth = authRequired ? isAuthenticated : true;
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
-
   // Screener reports per page (configurable in UI)
   const [reportsPerPage, setReportsPerPage] = useState<number>(() => {
     try {
@@ -51,6 +47,10 @@ export default function Index() {
       return FRONT_PAGE_LIMIT;
     }
   });
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = reportsPerPage;
 
   // Search
   const [searchTerm, setSearchTerm] = useState("");
@@ -66,73 +66,92 @@ export default function Index() {
 
   // Watchlist (now from API)
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
-  const watchlistLoadedRef = useRef(false);
-  const [loadingWatchlist, setLoadingWatchlist] = useState(true);
+  // Total items on server (used for server-backed pagination)
+  const [watchlistTotal, setWatchlistTotal] = useState(0);
 
-  // Load watchlist data from API
+  // Helper: map API watchlist item -> local WatchlistItem
+  const mapServerItemToWatchlistItem = (s: any): WatchlistItem => ({
+    symbol: s.name,
+    name: s.metadata?.name || s.name,
+    price: s.lastPrice ?? 0,
+    change: 0,
+    changePercent: 0,
+    sector: s.metadata?.data?.sector || s.metadata?.sector || s.sector || null,
+    industry:
+      s.metadata?.data?.industry || s.metadata?.industry || s.industry || null,
+    exchange:
+      s.metadata?.data?.exchange || s.metadata?.exchange || s.exchange || null,
+    type: s.symbolType || s.type || null,
+    action: s.lastAction ?? s.action ?? null,
+    // preserve full analysis object when provided by server
+    analysis: s.analysis ?? null,
+    isPopular: s.isPopular ?? false,
+    inWatchlist: s.inWatchlist ?? true,
+    symbolId: s.id,
+    symbolType: s.symbolType,
+  });
+  // Load watchlist data from API (supports server pagination & search)
   useEffect(() => {
-    if (watchlistLoadedRef.current) return;
+    let cancelled = false;
+
+    const filters = {
+      sectors: selectedSectors.length ? selectedSectors : undefined,
+      industries: selectedIndustries.length ? selectedIndustries : undefined,
+      exchanges: selectedExchanges.length ? selectedExchanges : undefined,
+      types: selectedTypes.length ? selectedTypes : undefined,
+      actions: selectedActions.length ? selectedActions : undefined,
+    } as any;
+
     const loadWatchlist = async () => {
-      setLoadingWatchlist(true);
       try {
-        const data = await getWatchlist(token);
+        const isSearching = searchTerm.trim().length > 0;
 
-        // Map API response to WatchlistItem format
-        const items: WatchlistItem[] = data.symbols.map((s: any) => ({
-          symbol: s.name,
-          name: s.sector || s.name,
-          price: 0,
-          change: 0,
-          changePercent: 0,
-          sector: s.sector,
-          industry: s.industry,
-          exchange: s.exchange,
-          type: s.type,
-          action: s.action,
-          isPopular: s.isPopular,
-          inWatchlist: s.inWatchlist,
-          symbolId: s.id,
-        }));
+        if (!isSearching) {
+          // Normal mode: fetch server page
+          const data = await getWatchlist(
+            currentPage,
+            reportsPerPage,
+            filters,
+            token,
+          );
+          if (cancelled) return;
 
-        setWatchlist(items);
+          const items: WatchlistItem[] = (data.data || []).map(
+            mapServerItemToWatchlistItem,
+          );
 
-        // Fetch quotes for all symbols in a single batch call
-        if (items.length > 0) {
-          try {
-            const { getQuotes } = await import("@/lib/netlifyApi");
-            const symbols = items.map((item) => item.symbol);
-            const quotesData = await getQuotes(symbols);
+          setWatchlist(items);
+          setWatchlistTotal(data.pagination?.total || items.length);
+          return;
+        }
 
-            const updatedItems = items.map((item) => {
-              const quote = quotesData[item.symbol];
-              if (quote) {
-                return {
-                  ...item,
-                  name: quote.name || item.name,
-                  price: quote.price || item.price,
-                  change: quote.change || item.change,
-                  changePercent: quote.changePercent || item.changePercent,
-                };
-              }
-              return item;
-            });
+        // Search mode: fetch all pages then filter client-side
+        const first = await getWatchlist(1, reportsPerPage, filters, token);
+        const total = first.pagination?.total || 0;
+        const totalPages = Math.max(1, Math.ceil(total / reportsPerPage));
 
-            setWatchlist(updatedItems);
-            watchlistLoadedRef.current = true;
-          } catch (error) {
-            console.error("Failed to load quotes:", error);
-            watchlistLoadedRef.current = true;
-          } finally {
-            setLoadingWatchlist(false);
+        let allItems = first.data || [];
+        const promises = [];
+        for (let p = 2; p <= totalPages; p++) {
+          promises.push(getWatchlist(p, reportsPerPage, filters, token));
+        }
+
+        if (promises.length > 0) {
+          const rest = await Promise.all(promises);
+          for (const res of rest) {
+            allItems = allItems.concat(res.data || []);
           }
-        } else {
-          watchlistLoadedRef.current = true;
-          setLoadingWatchlist(false);
+        }
+
+        if (!cancelled) {
+          const items: WatchlistItem[] = (allItems || []).map(
+            mapServerItemToWatchlistItem,
+          );
+          setWatchlist(items);
+          setWatchlistTotal(total);
         }
       } catch (error) {
         console.error("Failed to load watchlist:", error);
-        watchlistLoadedRef.current = true;
-        setLoadingWatchlist(false);
         toast({
           title: "Erreur",
           description: "Impossible de charger la watchlist",
@@ -142,8 +161,21 @@ export default function Index() {
     };
 
     loadWatchlist();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+
+    return () => {
+      cancelled = true;
+    };
+    // include filters + page + searchTerm so changing them refetches
+  }, [
+    token,
+    currentPage,
+    selectedSectors,
+    selectedIndustries,
+    selectedExchanges,
+    selectedTypes,
+    selectedActions,
+    searchTerm,
+  ]);
 
   const handleRefreshWatchlist = useCallback(async () => {
     if (watchlist.length === 0) return;
@@ -151,45 +183,41 @@ export default function Index() {
     try {
       toast({
         title: "Refreshing watchlist",
-        description: "Fetching latest prices...",
+        description: "Refreshing watchlist data (prices disabled)",
       });
 
-      // Fetch all quotes in a single batch call
-      const { getQuotes } = await import("@/lib/netlifyApi");
-      const symbols = watchlist.map((item) => item.symbol);
-      const quotesData = await getQuotes(symbols);
+      // Reload watchlist metadata from API (fetch current server page)
+      const filters = undefined;
+      const data = await getWatchlist(
+        currentPage,
+        reportsPerPage,
+        filters,
+        token,
+      );
+      const items: WatchlistItem[] = (data.data || []).map(
+        mapServerItemToWatchlistItem,
+      );
 
-      const updatedItems = watchlist.map((item) => {
-        const quote = quotesData[item.symbol];
-        if (quote) {
-          return {
-            ...item,
-            name: quote.name || item.name,
-            price: quote.price || item.price,
-            change: quote.change || item.change,
-            changePercent: quote.changePercent || item.changePercent,
-          };
-        }
-        return item;
-      });
+      // Update items and server total
+      setWatchlist(items);
+      setWatchlistTotal(data.pagination?.total || items.length);
 
-      setWatchlist(updatedItems);
       toast({
         title: "Watchlist refreshed",
-        description: "Latest prices have been updated",
+        description: "Watchlist data refreshed (realtime prices disabled)",
       });
     } catch (error) {
       console.error("Failed to refresh watchlist:", error);
       toast({
         title: "Refresh failed",
-        description: "Could not update prices. Please try again.",
+        description: "Could not refresh watchlist. Please try again.",
         variant: "destructive",
       });
     }
   }, [watchlist, toast]);
 
   const handleAddToWatchlist = useCallback(
-    async (symbol: string) => {
+    async (symbol: string, symbolType?: string) => {
       // Vérifier l'authentification uniquement si MUST_BE_AUTHENTICATED est true
       if (authRequired && !isAuthenticated) {
         toast({
@@ -215,51 +243,20 @@ export default function Index() {
           description: `Ajout de ${symbol} à votre watchlist`,
         });
 
-        // Ajouter via l'API avec token
-        const { addSymbol, getQuotes } = await import("@/lib/netlifyApi");
-        await addSymbol(symbol, token);
+        // Ajouter via l'API avec token et symbolType
+        const { addSymbol } = await import("@/lib/netlifyApi");
+        await addSymbol(symbol, token, symbolType);
 
-        // Recharger la watchlist
-        const data = await getWatchlist(token);
-        const items: WatchlistItem[] = data.symbols.map((s: any) => ({
-          symbol: s.name,
-          name: s.sector || s.name,
-          price: 0,
-          change: 0,
-          changePercent: 0,
-          sector: s.sector,
-          industry: s.industry,
-          exchange: s.exchange,
-          type: s.type,
-          action: s.action,
-          isPopular: s.isPopular,
-          inWatchlist: s.inWatchlist,
-          symbolId: s.id,
-        }));
+        // Recharger la watchlist (fetch page 1)
+        const filters = undefined;
+        const data = await getWatchlist(1, reportsPerPage, filters, token);
+        const items: WatchlistItem[] = (data.data || []).map(
+          mapServerItemToWatchlistItem,
+        );
 
-        // Fetch quotes in batch
-        if (items.length > 0) {
-          const symbols = items.map((item) => item.symbol);
-          const quotesData = await getQuotes(symbols);
-
-          const updatedItems = items.map((item) => {
-            const quote = quotesData[item.symbol];
-            if (quote) {
-              return {
-                ...item,
-                name: quote.name || item.name,
-                price: quote.price || item.price,
-                change: quote.change || item.change,
-                changePercent: quote.changePercent || item.changePercent,
-              };
-            }
-            return item;
-          });
-
-          setWatchlist(updatedItems);
-        } else {
-          setWatchlist(items);
-        }
+        // Quotes disabled — set watchlist items and update server total
+        setWatchlist(items);
+        setWatchlistTotal(data.pagination?.total || items.length);
 
         setCurrentPage(1);
 
@@ -391,10 +388,23 @@ export default function Index() {
 
     return matchesSearch && matchesAnyGroup;
   });
-  const totalPages = Math.ceil(filteredWatchlist.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedItems = filteredWatchlist.slice(startIndex, endIndex);
+  const isSearchingTop = searchTerm.trim().length > 0;
+  const totalPages = isSearchingTop
+    ? Math.max(1, Math.ceil(filteredWatchlist.length / itemsPerPage))
+    : Math.max(1, Math.ceil(watchlistTotal / itemsPerPage));
+
+  // When searching, paginate client-side across all loaded items; otherwise server returns the requested page
+  const paginatedItems = isSearchingTop
+    ? filteredWatchlist.slice(
+        (currentPage - 1) * itemsPerPage,
+        (currentPage - 1) * itemsPerPage + itemsPerPage,
+      )
+    : watchlist;
+
+  // If the server total changed and we're beyond the last page, reset to page 1
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(1);
+  }, [totalPages]);
 
   const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page);
@@ -778,10 +788,8 @@ export default function Index() {
               token={token}
               onSelect={() => {}}
               onRefresh={handleRefreshWatchlist}
-              loading={loadingWatchlist}
               currentPage={currentPage}
-              totalPages={totalPages}
-              totalItems={filteredWatchlist.length}
+              totalItems={watchlistTotal}
               onPageChange={handlePageChange}
               sectors={selectedSectors}
               industries={selectedIndustries}
@@ -789,6 +797,7 @@ export default function Index() {
               types={selectedTypes}
               actions={selectedActions}
               reportsPerPage={reportsPerPage}
+              itemsPerPage={itemsPerPage}
             />
           </TabsContent>
 

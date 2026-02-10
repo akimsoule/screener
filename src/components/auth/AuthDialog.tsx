@@ -14,8 +14,8 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
 interface AuthDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
 }
 
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
@@ -34,7 +34,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const [signupName, setSignupName] = useState("");
   const [signupLoading, setSignupLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!loginEmail || !loginPassword) {
       toast({
@@ -67,7 +67,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     }
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!signupEmail || !signupPassword) {
       toast({

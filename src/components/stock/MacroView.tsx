@@ -33,7 +33,25 @@ export function MacroView() {
     const fetchMacroData = async () => {
       try {
         const data = await getMacroData();
-        setMacroData(data);
+
+        // Map backend shape (MacroApiResponse) to the frontend MacroData
+        const marketData = data.marketData ?? {
+          fedDotPlot2025: 0,
+          marketPricing2025: 0,
+          ismPmi: 50,
+          dxyMomentum: 0,
+          m2Growth: 0,
+          nfpSurprise: 0,
+        };
+
+        const mapped: MacroData = {
+          timestamp: data.timestamp ?? new Date().toISOString(),
+          marketData,
+          macroRegime: data.macroRegime,
+          assetBias: data.assetBias,
+        };
+
+        setMacroData(mapped);
       } catch (err) {
         setError((err as Error).message);
       } finally {

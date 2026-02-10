@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { FRONT_PAGE_LIMIT } from "@/lib/Constant";
 import {
-  Plus,
   RefreshCw,
   ChevronLeft,
   ChevronRight,
@@ -10,14 +10,9 @@ import {
   Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import {
-  deleteSymbol,
-  searchSymbols,
-  runScreenerWithPage,
-} from "@/lib/netlifyApi";
+import { deleteSymbol, getWatchlist, refreshCache } from "@/lib/netlifyApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -27,19 +22,21 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { AnalysisHierarchy } from "./AnalysisHierarchy";
+import { AddSymbolDialog } from "./AddSymbolDialog";
 import type { WatchlistItem, AnalysisReport } from "@/types/stock";
 import { cn } from "@/lib/utils";
+import { mapItemsToReports, getActionClass, toServerItem } from "./watchlistHelpers";
+import { ReportsTable } from "./ReportsTable";
+import { ReportsPagination } from "./ReportsPagination";
 
 interface WatchlistProps {
   items: WatchlistItem[];
   searchTerm?: string;
-  onAdd: (symbol: string) => void;
+  onAdd: (symbol: string, symbolType?: string) => void;
   onRemove: (symbol: string) => void;
   onSelect?: (symbol: string) => void;
   onRefresh: () => void;
-  loading?: boolean;
   currentPage?: number;
-  totalPages?: number;
   totalItems?: number;
   onPageChange?: (page: number) => void;
   // Optional filters propagated from parent
@@ -49,6 +46,7 @@ interface WatchlistProps {
   types?: string[];
   actions?: string[];
   reportsPerPage?: number;
+  itemsPerPage?: number;
   isAuthenticated?: boolean;
   token?: string | null;
 }
@@ -60,9 +58,7 @@ export function Watchlist({
   onRemove,
   // onSelect,
   onRefresh,
-  loading,
   currentPage = 1,
-  totalPages = 1,
   totalItems = 0,
   onPageChange,
   // Optional filters propagated from parent
@@ -71,20 +67,18 @@ export function Watchlist({
   exchanges = [],
   types = [],
   actions = [],
-  reportsPerPage = 10,
+  reportsPerPage = FRONT_PAGE_LIMIT,
+  itemsPerPage = FRONT_PAGE_LIMIT,
   isAuthenticated = false,
   token = null,
 }: Readonly<WatchlistProps>) {
-  const [newSymbol, setNewSymbol] = useState("");
-  const [suggestions, setSuggestions] = useState<
-    { symbol: string; name?: string }[]
-  >([]);
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [reports, setReports] = useState<AnalysisReport[]>([]);
   const [reportsTotal, setReportsTotal] = useState(0);
   const [loadingReports, setLoadingReports] = useState(true);
   const [copiedSymbol, setCopiedSymbol] = useState<string | null>(null);
   const { toast } = useToast();
+
+  console.log("Loading watchlist with filters", loadingReports);
 
   // Stabilize filter dependencies to avoid unnecessary re-renders
   const filterKey = useMemo(
@@ -98,146 +92,143 @@ export function Watchlist({
     r.symbol.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  const getActionClass = (action?: string) => {
-    if (!action) return "bg-secondary text-muted-foreground";
-    if (action.includes("ACHAT")) return "bg-gain/20 text-gain";
-    if (action.includes("VENTE")) return "bg-loss/20 text-loss";
-    return "bg-secondary text-muted-foreground";
-  };
-
   // If a search is active we compute total pages from the filtered set (client-side pagination).
-  // Otherwise rely on server-provided total count.
+  // Otherwise rely on server-provided total count (use itemsPerPage for server pages)
   const isSearching = searchTerm.trim().length > 0;
+  // page size for server-retrieved report pages vs client-side search pages
+  const pageSizeForReports = reportsPerPage;
+
   const totalReportPages = isSearching
     ? Math.max(1, Math.ceil(filteredReports.length / reportsPerPage))
     : Math.max(1, Math.ceil((reportsTotal || 0) / reportsPerPage));
 
-  // Paginate client-side when searching, otherwise `reports` already contains current page from server
+  // Paginate client-side when searching, otherwise use the server page already in `reports`
   const paginatedReports = isSearching
     ? filteredReports.slice(
         (currentPage - 1) * reportsPerPage,
         currentPage * reportsPerPage,
       )
-    : filteredReports;
+    : reports;
 
-  // Load paginated reports when currentPage changes
+  // Load paginated reports when items change
+
   useEffect(() => {
+    let cancelled = false;
+
     const loadReports = async () => {
       setLoadingReports(true);
-      try {
-        const isSearching = searchTerm.trim().length > 0;
+      let keepLoading = false;
 
-        if (!isSearching) {
-          // Normal mode: fetch only the current page from server
-          const body = await runScreenerWithPage(currentPage, reportsPerPage, {
-            sectors,
-            industries,
-            exchanges,
-            types,
-            actions,
-          });
-          setReports(body.reports || []);
-          setReportsTotal(body.total || 0);
-          return;
-        }
+      const setFromItems = (srcItems: any[]) => {
+        if (cancelled) return;
+        const initialForMap = srcItems.map(toServerItem);
+        setReports(mapItemsToReports(initialForMap));
+        setReportsTotal(totalItems || initialForMap.length);
+      };
 
-        // Search mode: fetch all pages from server then filter client-side
-        const first = await runScreenerWithPage(1, reportsPerPage, {
-          sectors,
-          industries,
-          exchanges,
-          types,
-          actions,
-        });
-        const total = first.total || 0;
+      const fetchAllReports = async () => {
+        const first = await getWatchlist(
+          1,
+          reportsPerPage,
+          { sectors, industries, exchanges, types, actions },
+          token,
+        );
+        const total = first.pagination?.total || 0;
         const totalPages = Math.max(1, Math.ceil(total / reportsPerPage));
 
-        let allReports = first.reports || [];
-
-        const promises = [];
+        let allReports = first.data || [];
+        const promises = [] as Promise<any>[];
         for (let p = 2; p <= totalPages; p++) {
           promises.push(
-            runScreenerWithPage(p, reportsPerPage, {
-              sectors,
-              industries,
-              exchanges,
-              types,
-              actions,
-            }),
+            getWatchlist(
+              p,
+              reportsPerPage,
+              { sectors, industries, exchanges, types, actions },
+              token,
+            ),
           );
         }
 
         if (promises.length > 0) {
           const rest = await Promise.all(promises);
           for (const res of rest) {
-            allReports = allReports.concat(res.reports || []);
+            allReports = allReports.concat(res.data || []);
           }
         }
 
-        setReports(allReports);
-        setReportsTotal(total);
+        if (!cancelled) {
+          setReports(mapItemsToReports(allReports));
+          setReportsTotal(total);
+        }
+      };
+
+      try {
+        const isSearching = searchTerm.trim().length > 0;
+
+        if (!isSearching) {
+          if (items && items.length > 0) {
+            setFromItems(items);
+            return;
+          }
+
+          // If items are empty, keep loading until parent provides them
+          if (!items || items.length === 0) {
+            keepLoading = true;
+            return;
+          }
+
+          // Fallback empty
+          setReports([]);
+          setReportsTotal(0);
+          return;
+        }
+
+        // Search mode
+        await fetchAllReports();
       } catch (err) {
         console.error("Failed to fetch screener:", err);
       } finally {
-        setLoadingReports(false);
+        if (!cancelled && !keepLoading) setLoadingReports(false);
       }
     };
 
     loadReports();
-  }, [currentPage, searchTerm, filterKey, reportsPerPage]);
-
-  const handleAdd = (e: any) => {
-    e.preventDefault();
-    if (newSymbol.trim()) {
-      onAdd(newSymbol.trim().toUpperCase());
-      setNewSymbol("");
-    }
-  };
-
-  // fetch suggestions from server when typing (debounced)
-  useEffect(() => {
-    const q = newSymbol.trim();
-    if (q.length === 0) {
-      setSuggestions([]);
-      return;
-    }
-
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      try {
-        setLoadingSuggestions(true);
-        const res = await searchSymbols(q);
-        if (cancelled) return;
-        setSuggestions(res?.suggestions ?? []);
-      } catch (err) {
-        console.error("Failed to fetch suggestions:", err);
-        setSuggestions([]);
-      } finally {
-        setLoadingSuggestions(false);
-      }
-    }, 300);
-
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
-  }, [newSymbol]);
+  }, [searchTerm, filterKey, reportsPerPage, items, totalItems, token]);
 
   const handleRefresh = useCallback(async () => {
+    // Attempt to refresh server memory cache first (optional token header)
+    try {
+      await refreshCache();
+      toast({
+        title: "Cache refreshed",
+        description: "Backend memory cache cleared.",
+      });
+    } catch (err) {
+      // If refresh fails, continue to fetch watchlist anyway
+      console.warn("Cache refresh failed:", err);
+      toast({
+        title: "Refresh failed",
+        description: "Cache refresh request failed",
+        variant: "destructive",
+      });
+    }
+
     // call existing prop so parent can react
     onRefresh();
 
     try {
-      const body = await runScreenerWithPage(1, reportsPerPage, {
-        sectors,
-        industries,
-        exchanges,
-        types,
-        actions,
-      });
-      const fetchedReports = body.reports || [];
-      setReports(fetchedReports);
-      setReportsTotal(body.total || 0);
+      const body = await getWatchlist(
+        currentPage,
+        reportsPerPage,
+        { sectors, industries, exchanges, types, actions },
+        token,
+      );
+      const fetchedReports = body.data || [];
+      setReports(mapItemsToReports(fetchedReports));
+      setReportsTotal(body.pagination?.total || 0);
     } catch (err) {
       console.error("Failed to fetch screener:", err);
     }
@@ -249,6 +240,7 @@ export function Watchlist({
     types,
     actions,
     onRefresh,
+    token,
   ]);
 
   const handleDeleteSymbol = useCallback(
@@ -262,19 +254,18 @@ export function Watchlist({
         });
 
         try {
-          const body = await runScreenerWithPage(currentPage, reportsPerPage, {
-            sectors,
-            industries,
-            exchanges,
-            types,
-            actions,
-          });
-          const fetchedReports = body.reports || [];
-          setReports(fetchedReports);
-          setReportsTotal(body.total || 0);
+          const body = await getWatchlist(
+            currentPage,
+            reportsPerPage,
+            { sectors, industries, exchanges, types, actions },
+            token,
+          );
+          const fetchedReports = body.data || [];
+          setReports(mapItemsToReports(fetchedReports));
+          setReportsTotal(body.pagination?.total || 0);
 
           // If the current page is now empty and we're not on the first page,
-          // move back one page
+          // move back one page (parent will fetch previous page)
           if (fetchedReports.length === 0 && currentPage > 1) {
             onPageChange?.(currentPage - 1);
           }
@@ -408,130 +399,82 @@ export function Watchlist({
     [formatRecommendationLong, toast],
   );
 
-  if (loading) {
-    return (
-      <Card className="glass-card h-full">
-        <CardHeader className="flex flex-row items-center justify-between pb-4">
-          <CardTitle className="text-lg">Watchlist</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center py-8">
-            <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-sm text-muted-foreground">
-              Chargement des rapports...
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  const handleChangePage = useCallback(
+    (page: number) => {
+      // Show loading immediately when user requests a page change
+      setLoadingReports(true);
+      onPageChange?.(page);
+      // Scroll to top of watchlist on page change
+      const container = document.getElementById("watchlist-container");
+      if (container) {
+        container.scrollIntoView({ behavior: "smooth" });
+      }
+    },
+    [onPageChange],
+  );
 
   return (
-    <Card className="glass-card h-full">
+    <Card id="watchlist-container" className="glass-card h-full">
       <CardHeader className="flex flex-row items-center justify-between pb-4">
         <CardTitle className="text-lg">Watchlist</CardTitle>
         <Button
           variant="ghost"
           size="icon"
           onClick={handleRefresh}
-          disabled={loading}
+          disabled={loadingReports}
           className="h-8 w-8"
         >
-          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+          <RefreshCw
+            className={cn("h-4 w-4", loadingReports && "animate-spin")}
+          />
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        <form onSubmit={handleAdd} className="relative">
-          <div className="flex gap-2">
-            <Input
-              value={newSymbol}
-              onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-              placeholder={
-                isAuthenticated ? "Add symbol" : "Connectez-vous pour ajouter"
-              }
-              className="bg-secondary border-border font-mono uppercase"
-              aria-autocomplete="list"
-              aria-haspopup="listbox"
-              disabled={!isAuthenticated}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              disabled={!isAuthenticated || !newSymbol.trim()}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* suggestions dropdown */}
-          {((suggestions && suggestions.length > 0) || loadingSuggestions) && (
-            <div className="absolute left-0 right-0 mt-1 z-50 bg-popover border border-border rounded-md shadow-lg">
-              {loadingSuggestions ? (
-                <div className="p-2 text-sm text-muted-foreground">
-                  Recherche...
-                </div>
-              ) : (
-                <ul className="max-h-56 overflow-auto">
-                  {suggestions.map((s) => (
-                    <li key={s.symbol}>
-                      <button
-                        type="button"
-                        className="w-full text-left px-3 py-2 hover:bg-secondary cursor-pointer flex justify-between items-center"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          // fill input with selected symbol
-                          setNewSymbol(s.symbol);
-                          // optionally add immediately
-                          // onAdd(s.symbol);
-                          setSuggestions([]);
-                        }}
-                      >
-                        <div className="font-mono">{s.symbol}</div>
-                        <div className="text-xs text-muted-foreground truncate ml-2">
-                          {s.name}
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </form>
+        <div className="flex justify-end">
+          <AddSymbolDialog
+            onSymbolAdded={(symbol, symbolType) => {
+              // Appeler onAdd avec le symbole et son type
+              onAdd(symbol, symbolType);
+            }}
+          />
+        </div>
       </CardContent>
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {totalReportPages > 1 && (
         <div className="px-4 pb-4">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground text-center sm:text-left">
               <span className="hidden sm:inline">
-                Showing {items.length > 0 ? (currentPage - 1) * 10 + 1 : 0} to{" "}
-                {Math.min(currentPage * 10, totalItems)} of {totalItems} items
+                Showing{" "}
+                {items.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to{" "}
+                {Math.min(currentPage * itemsPerPage, totalItems)} of{" "}
+                {totalItems} items
               </span>
               <span className="sm:hidden">
-                {items.length > 0 ? (currentPage - 1) * 10 + 1 : 0}-
-                {Math.min(currentPage * 10, totalItems)} / {totalItems}
+                {items.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}-
+                {Math.min(currentPage * itemsPerPage, totalItems)} /{" "}
+                {totalItems}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onPageChange?.(currentPage - 1)}
+                onClick={() => handleChangePage(currentPage - 1)}
                 disabled={currentPage === 1}
               >
                 <ChevronLeft className="h-4 w-4" />
                 <span className="hidden sm:inline">Previous</span>
               </Button>
               <span className="text-sm whitespace-nowrap">
-                Page {currentPage} of {totalPages}
+                Page {currentPage} of {totalReportPages}
               </span>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onPageChange?.(currentPage + 1)}
-                disabled={currentPage === totalPages}
+                onClick={() => handleChangePage(currentPage + 1)}
+                disabled={currentPage === totalReportPages}
               >
                 <span className="hidden sm:inline">Next</span>
                 <ChevronRight className="h-4 w-4" />
@@ -542,18 +485,27 @@ export function Watchlist({
       )}
 
       {/* filter reports by searchTerm */}
-      {reportsTotal > 0 && (
+      {(reportsTotal > 0 || loadingReports) && (
         <div className="p-3">
           <h3 className="text-sm font-medium mb-2">Screener Reports</h3>
           {loadingReports ? (
             <div className="flex items-center justify-center py-8">
               <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
               <span className="ml-2 text-sm text-muted-foreground">
-                Chargement des rapports...
+                Chargement en cours ...
               </span>
             </div>
           ) : (
             <>
+              <ReportsTable
+                reports={paginatedReports}
+                isAuthenticated={isAuthenticated}
+                getActionClass={getActionClass}
+                handleDeleteSymbol={handleDeleteSymbol}
+                handleCopyRecommendation={handleCopyRecommendation}
+                copiedSymbol={copiedSymbol}
+                formatRecommendationLong={formatRecommendationLong}
+              />
               {/* Desktop table */}
               <div className="hidden md:block overflow-auto">
                 <table className="w-full text-sm">
@@ -684,14 +636,27 @@ export function Watchlist({
                               <div className="space-y-4">
                                 {/* Hiérarchie d'Analyse : Fondamental → Technique */}
                                 {r.macroContext && (
-                                  <AnalysisHierarchy
-                                    macroPhase={r.macroContext.phase}
-                                    macroConfidence={r.macroContext.confidence}
-                                    technicalScore={r.score}
-                                    technicalAction={r.action}
-                                    liotBias={r.liotBias}
-                                  />
+                                  <details className="group">
+                                    <summary className="cursor-pointer font-medium flex items-center justify-between">
+                                      <span>Contexte macro</span>
+                                      <span className="text-sm text-muted-foreground">
+                                        Afficher
+                                      </span>
+                                    </summary>
+                                    <div className="mt-2">
+                                      <AnalysisHierarchy
+                                        macroPhase={r.macroContext.phase}
+                                        macroConfidence={
+                                          r.macroContext.confidence
+                                        }
+                                        technicalScore={r.score}
+                                        technicalAction={r.action}
+                                        liotBias={r.liotBias}
+                                      />
+                                    </div>
+                                  </details>
                                 )}
+
                                 <div className="text-sm">
                                   <p className="font-medium mb-2">
                                     Interprétation :
@@ -700,105 +665,126 @@ export function Watchlist({
                                     {r.interpretation}
                                   </p>
                                 </div>
+
                                 {r.recommendation && (
-                                  <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                      <p className="font-medium">
-                                        Recommandation :
+                                  <details className="group mt-2">
+                                    <summary className="cursor-pointer flex items-center justify-between">
+                                      <div>
+                                        <span className="font-medium">
+                                          Recommandation
+                                        </span>
+                                        <span className="text-sm text-muted-foreground ml-2">
+                                          {r.recommendation.side} • RR:{" "}
+                                          {r.recommendation.riskReward ?? "-"}
+                                        </span>
+                                      </div>
+                                      <span className="text-sm text-muted-foreground">
+                                        Afficher
+                                      </span>
+                                    </summary>
+                                    <div className="mt-2">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <p className="font-medium">
+                                          Recommandation :
+                                        </p>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            handleCopyRecommendation(r)
+                                          }
+                                          className="h-8 gap-2"
+                                        >
+                                          {copiedSymbol === r.symbol ? (
+                                            <>
+                                              <Check className="h-4 w-4" />
+                                              Copié
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Copy className="h-4 w-4" />
+                                              Copier
+                                            </>
+                                          )}
+                                        </Button>
+                                      </div>
+
+                                      <p className="text-sm text-muted-foreground mb-2 whitespace-pre-line">
+                                        {formatRecommendationLong(r)}
                                       </p>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() =>
-                                          handleCopyRecommendation(r)
-                                        }
-                                        className="h-8 gap-2"
-                                      >
-                                        {copiedSymbol === r.symbol ? (
+
+                                      <div className="grid grid-cols-2 gap-2 text-sm">
+                                        <div>
+                                          <span className="font-medium">
+                                            Side:
+                                          </span>{" "}
+                                          {r.recommendation.side}
+                                        </div>
+                                        <div>
+                                          <span className="font-medium">
+                                            RR:
+                                          </span>{" "}
+                                          {r.recommendation.riskReward}
+                                        </div>
+                                        <div>
+                                          <span className="font-medium">
+                                            Entry:
+                                          </span>{" "}
+                                          {r.recommendation.entry ?? "-"}
+                                        </div>
+                                        <div>
+                                          <span className="font-medium">
+                                            Stop Loss:
+                                          </span>{" "}
+                                          {r.recommendation.stopLoss ?? "-"}
+                                        </div>
+                                        <div>
+                                          <span className="font-medium">
+                                            Take Profit:
+                                          </span>{" "}
+                                          {r.recommendation.takeProfit ?? "-"}
+                                        </div>
+                                        {r.recommendation.holdingPeriod && (
                                           <>
-                                            <Check className="h-4 w-4" />
-                                            Copié
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Copy className="h-4 w-4" />
-                                            Copier
+                                            <div className="col-span-2">
+                                              <span className="font-medium">
+                                                Durée estimée:
+                                              </span>{" "}
+                                              {
+                                                r.recommendation.holdingPeriod
+                                                  .target
+                                              }{" "}
+                                              jours
+                                              <span className="text-xs text-muted-foreground ml-1">
+                                                (
+                                                {
+                                                  r.recommendation.holdingPeriod
+                                                    .min
+                                                }
+                                                -
+                                                {
+                                                  r.recommendation.holdingPeriod
+                                                    .max
+                                                }
+                                                j)
+                                              </span>
+                                            </div>
+                                            <div className="col-span-2">
+                                              <span className="font-medium">
+                                                Type:
+                                              </span>{" "}
+                                              <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                                                {
+                                                  r.recommendation.holdingPeriod
+                                                    .description
+                                                }
+                                              </span>
+                                            </div>
                                           </>
                                         )}
-                                      </Button>
+                                      </div>
                                     </div>
-                                    <p className="text-sm text-muted-foreground mb-2 whitespace-pre-line">
-                                      {formatRecommendationLong(r)}
-                                    </p>
-                                    <div className="grid grid-cols-2 gap-2 text-sm">
-                                      <div>
-                                        <span className="font-medium">
-                                          Side:
-                                        </span>{" "}
-                                        {r.recommendation.side}
-                                      </div>
-                                      <div>
-                                        <span className="font-medium">RR:</span>{" "}
-                                        {r.recommendation.riskReward}
-                                      </div>
-                                      <div>
-                                        <span className="font-medium">
-                                          Entry:
-                                        </span>{" "}
-                                        {r.recommendation.entry ?? "-"}
-                                      </div>
-                                      <div>
-                                        <span className="font-medium">
-                                          Stop Loss:
-                                        </span>{" "}
-                                        {r.recommendation.stopLoss ?? "-"}
-                                      </div>
-                                      <div>
-                                        <span className="font-medium">
-                                          Take Profit:
-                                        </span>{" "}
-                                        {r.recommendation.takeProfit ?? "-"}
-                                      </div>
-                                      {r.recommendation.holdingPeriod && (
-                                        <>
-                                          <div className="col-span-2">
-                                            <span className="font-medium">
-                                              Durée estimée:
-                                            </span>{" "}
-                                            {
-                                              r.recommendation.holdingPeriod
-                                                .target
-                                            }{" "}
-                                            jours
-                                            <span className="text-xs text-muted-foreground ml-1">
-                                              (
-                                              {
-                                                r.recommendation.holdingPeriod
-                                                  .min
-                                              }
-                                              -
-                                              {
-                                                r.recommendation.holdingPeriod
-                                                  .max
-                                              }
-                                              j)
-                                            </span>
-                                          </div>
-                                          <div className="col-span-2">
-                                            <span className="font-medium">
-                                              Type:
-                                            </span>{" "}
-                                            <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                                              {
-                                                r.recommendation.holdingPeriod
-                                                  .description
-                                              }
-                                            </span>
-                                          </div>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
+                                  </details>
                                 )}
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div>
@@ -982,86 +968,113 @@ export function Watchlist({
                             </div>
 
                             {r.recommendation && (
-                              <div>
-                                <div className="flex items-center justify-between mb-2">
-                                  <p className="font-medium">
-                                    Recommandation :
+                              <details className="group mt-2">
+                                <summary className="cursor-pointer flex items-center justify-between">
+                                  <div>
+                                    <span className="font-medium">
+                                      Recommandation
+                                    </span>
+                                    <span className="text-sm text-muted-foreground ml-2">
+                                      {r.recommendation.side} • RR:{" "}
+                                      {r.recommendation.riskReward ?? "-"}
+                                    </span>
+                                  </div>
+                                  <span className="text-sm text-muted-foreground">
+                                    Afficher
+                                  </span>
+                                </summary>
+
+                                <div className="mt-2">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <p className="font-medium">
+                                      Recommandation :
+                                    </p>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() =>
+                                        handleCopyRecommendation(r)
+                                      }
+                                      className="h-8 gap-2"
+                                    >
+                                      {copiedSymbol === r.symbol ? (
+                                        <>
+                                          <Check className="h-4 w-4" />
+                                          Copié
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Copy className="h-4 w-4" />
+                                          Copier
+                                        </>
+                                      )}
+                                    </Button>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground mb-2 whitespace-pre-line">
+                                    {formatRecommendationLong(r)}
                                   </p>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleCopyRecommendation(r)}
-                                    className="h-8 gap-2"
-                                  >
-                                    {copiedSymbol === r.symbol ? (
+                                  <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div>
+                                      <span className="font-medium">Side:</span>{" "}
+                                      {r.recommendation.side}
+                                    </div>
+                                    <div>
+                                      <span className="font-medium">RR:</span>{" "}
+                                      {r.recommendation.riskReward}
+                                    </div>
+                                    <div>
+                                      <span className="font-medium">
+                                        Entry:
+                                      </span>{" "}
+                                      {r.recommendation.entry ?? "-"}
+                                    </div>
+                                    <div>
+                                      <span className="font-medium">
+                                        Stop Loss:
+                                      </span>{" "}
+                                      {r.recommendation.stopLoss ?? "-"}
+                                    </div>
+                                    <div>
+                                      <span className="font-medium">
+                                        Take Profit:
+                                      </span>{" "}
+                                      {r.recommendation.takeProfit ?? "-"}
+                                    </div>
+                                    {r.recommendation.holdingPeriod && (
                                       <>
-                                        <Check className="h-4 w-4" />
-                                        Copié
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Copy className="h-4 w-4" />
-                                        Copier
-                                      </>
-                                    )}
-                                  </Button>
-                                </div>
-                                <p className="text-sm text-muted-foreground mb-2 whitespace-pre-line">
-                                  {formatRecommendationLong(r)}
-                                </p>
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                  <div>
-                                    <span className="font-medium">Side:</span>{" "}
-                                    {r.recommendation.side}
-                                  </div>
-                                  <div>
-                                    <span className="font-medium">RR:</span>{" "}
-                                    {r.recommendation.riskReward}
-                                  </div>
-                                  <div>
-                                    <span className="font-medium">Entry:</span>{" "}
-                                    {r.recommendation.entry ?? "-"}
-                                  </div>
-                                  <div>
-                                    <span className="font-medium">
-                                      Stop Loss:
-                                    </span>{" "}
-                                    {r.recommendation.stopLoss ?? "-"}
-                                  </div>
-                                  <div>
-                                    <span className="font-medium">
-                                      Take Profit:
-                                    </span>{" "}
-                                    {r.recommendation.takeProfit ?? "-"}
-                                  </div>
-                                  {r.recommendation.holdingPeriod && (
-                                    <>
-                                      <div className="col-span-2">
-                                        <span className="font-medium">
-                                          Durée estimée:
-                                        </span>{" "}
-                                        {r.recommendation.holdingPeriod.target}{" "}
-                                        jours
-                                        <span className="text-xs text-muted-foreground ml-1">
-                                          ({r.recommendation.holdingPeriod.min}-
-                                          {r.recommendation.holdingPeriod.max}j)
-                                        </span>
-                                      </div>
-                                      <div className="col-span-2">
-                                        <span className="font-medium">
-                                          Type:
-                                        </span>{" "}
-                                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                                        <div className="col-span-2">
+                                          <span className="font-medium">
+                                            Durée estimée:
+                                          </span>{" "}
                                           {
                                             r.recommendation.holdingPeriod
-                                              .description
-                                          }
-                                        </span>
-                                      </div>
-                                    </>
-                                  )}
+                                              .target
+                                          }{" "}
+                                          jours
+                                          <span className="text-xs text-muted-foreground ml-1">
+                                            (
+                                            {r.recommendation.holdingPeriod.min}
+                                            -
+                                            {r.recommendation.holdingPeriod.max}
+                                            j)
+                                          </span>
+                                        </div>
+                                        <div className="col-span-2">
+                                          <span className="font-medium">
+                                            Type:
+                                          </span>{" "}
+                                          <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                                            {
+                                              r.recommendation.holdingPeriod
+                                                .description
+                                            }
+                                          </span>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
+                              </details>
                             )}
 
                             <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1121,53 +1134,14 @@ export function Watchlist({
             </>
           )}
 
-          {/* Reports pagination */}
-          {totalReportPages > 1 && !loadingReports && (
-            <div className="px-4 pt-3">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="text-sm text-muted-foreground text-center sm:text-left">
-                  <span className="hidden sm:inline">
-                    Showing{" "}
-                    {reportsTotal > 0
-                      ? (currentPage - 1) * reportsPerPage + 1
-                      : 0}{" "}
-                    to {Math.min(currentPage * reportsPerPage, reportsTotal)} of{" "}
-                    {reportsTotal} reports
-                  </span>
-                  <span className="sm:hidden">
-                    {reportsTotal > 0
-                      ? (currentPage - 1) * reportsPerPage + 1
-                      : 0}
-                    -{Math.min(currentPage * reportsPerPage, reportsTotal)} /{" "}
-                    {reportsTotal}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onPageChange?.(currentPage - 1)}
-                    disabled={currentPage === 1}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    <span className="hidden sm:inline">Previous</span>
-                  </Button>
-                  <span className="text-sm whitespace-nowrap">
-                    Page {currentPage} of {totalReportPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onPageChange?.(currentPage + 1)}
-                    disabled={currentPage === totalReportPages}
-                  >
-                    <span className="hidden sm:inline">Next</span>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
+          <ReportsPagination
+            currentPage={currentPage}
+            totalReportPages={totalReportPages}
+            pageSizeForReports={pageSizeForReports}
+            reportsTotal={reportsTotal}
+            onPageChange={(p) => onPageChange?.(p)}
+            loadingReports={loadingReports}
+          />
         </div>
       )}
     </Card>

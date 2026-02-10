@@ -35,6 +35,9 @@ export interface WatchlistItem {
   isPopular?: boolean;
   inWatchlist?: boolean;
   symbolId?: string;
+  symbolType?: string | null;
+  // Optional full analysis report from server (when available)
+  analysis?: AnalysisReport | null;
 }
 
 export interface StockIndicators {

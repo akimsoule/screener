@@ -1,63 +1,75 @@
 import type { Context } from "@netlify/functions";
-import { prisma } from "../lib/prisma";
-import { requireAuth, extractToken, verifyToken } from "../lib/auth";
-import { fetchSymbolDetails } from "../lib/provider/dataProvider";
-import { cache } from "../lib/cache";
-import { MUST_BE_AUTHENTICATED } from "../lib/constants";
-
-interface SymbolDetails {
-  symbol: string;
-  name: string;
-  exchange: string;
-  industry: string;
-  sector: string;
-  type: string;
-}
-
-const SYMBOL_SELECT = {
-  id: true,
-  name: true,
-  enabled: true,
-  isPopular: true,
-  sector: true,
-  industry: true,
-  exchange: true,
-  type: true,
-  action: true,
-  createdAt: true,
-  updatedAt: true,
-};
+import { watchlistService } from "../../app/analysis/services/watchlistService";
+import { filterService } from "../../app/analysis/services/filterService";
 
 async function handleGetSymbols(request: Request) {
-  const token = extractToken(request);
-  const user = token ? verifyToken(token) : null;
+  const url = new URL(request.url);
 
-  // En mode sans authentification, charger tous les symboles pour l'utilisateur anonyme
-  if (!MUST_BE_AUTHENTICATED) {
-    const [popularSymbols, anonymousWatchlist] = await Promise.all([
-      prisma.symbol.findMany({
-        where: { isPopular: true },
-        select: SYMBOL_SELECT,
-      }),
-      prisma.watchlist.findMany({
-        where: { userId: "anonymous" },
-        include: {
-          symbol: { select: SYMBOL_SELECT },
+  // Parse and validate filters via FilterService (delegates validation to service)
+  const parsed = await filterService.parseFilterParams(url.searchParams);
+  const filters = parsed.options;
+  const scoreMin = parsed.scoreMin;
+  const scoreMax = parsed.scoreMax;
+  const page = parsed.page;
+  const limit = parsed.limit;
+
+  // Delegate computation to WatchlistService (services own cache). Do not read/write cache here.
+  try {
+    // If score filters are present, retrieve a large page from the service and apply score filters in REST layer
+    if (scoreMin !== undefined || scoreMax !== undefined) {
+      const fetchAllLimit = 10000; // reasonable upper bound
+      const all = await watchlistService.getWatchlist(
+        filters,
+        1,
+        fetchAllLimit,
+      );
+
+      const filteredByScore = (all.data || []).filter((item: any) => {
+        let s = 0;
+        if (typeof item.lastScore === "number") s = item.lastScore;
+        else if (item.lastScore)
+          s = Number.parseFloat(String(item.lastScore)) || 0;
+
+        if (scoreMin !== undefined && s < scoreMin) return false;
+        if (scoreMax !== undefined && s > scoreMax) return false;
+        return true;
+      });
+
+      const total = filteredByScore.length;
+      const totalPages = Math.max(1, Math.ceil(total / limit));
+      const pageItems = filteredByScore.slice((page - 1) * limit, page * limit);
+
+      const result = {
+        data: pageItems,
+        pagination: { page, limit, total, totalPages },
+        appliedFilters: { ...filters, scoreMin, scoreMax },
+      } as any;
+
+      return new Response(
+        JSON.stringify({
+          ...result,
+          cached: (all as any).cached ?? false,
+          cacheTs: (all as any).cacheTs ?? null,
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
         },
-      }),
-    ]);
+      );
+    }
 
-    const symbolsMap = new Map();
-    popularSymbols.forEach((s) => {
-      symbolsMap.set(s.id, { ...s, inWatchlist: false });
-    });
-    anonymousWatchlist.forEach((w) => {
-      symbolsMap.set(w.symbol.id, { ...w.symbol, inWatchlist: true });
-    });
+    // No score filters — rely on the service pagination
+    const result = await watchlistService.getWatchlist(filters, page, limit);
 
-    const symbols = Array.from(symbolsMap.values());
     return new Response(
-      JSON.stringify({ symbols, user: { email: "anonymous@localhost" } }),
+      JSON.stringify({
+        ...result,
+        cached: (result as any).cached ?? false,
+        cacheTs: (result as any).cacheTs ?? null,
+      }),
       {
         status: 200,
         headers: {
@@ -66,159 +78,30 @@ async function handleGetSymbols(request: Request) {
         },
       },
     );
-  }
-
-  if (user) {
-    const [popularSymbols, userWatchlist] = await Promise.all([
-      prisma.symbol.findMany({
-        where: { isPopular: true },
-        select: SYMBOL_SELECT,
-      }),
-      prisma.watchlist.findMany({
-        where: { userId: user.userId },
-        include: {
-          symbol: { select: SYMBOL_SELECT },
-        },
-      }),
-    ]);
-
-    const symbolsMap = new Map();
-    popularSymbols.forEach((s) => {
-      symbolsMap.set(s.id, { ...s, inWatchlist: false });
-    });
-    userWatchlist.forEach((w) => {
-      symbolsMap.set(w.symbol.id, { ...w.symbol, inWatchlist: true });
-    });
-
-    const symbols = Array.from(symbolsMap.values());
-    return new Response(
-      JSON.stringify({ symbols, user: { email: user.email } }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+  } catch (err) {
+    console.error("Watchlist computation failed:", err);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
       },
-    );
+    });
   }
-
-  const symbols = await prisma.symbol.findMany({
-    where: { isPopular: true },
-    select: SYMBOL_SELECT,
-  });
-
-  return new Response(JSON.stringify({ symbols, user: null }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-    },
-  });
 }
 
 async function handlePostSymbol(request: Request) {
-  const user = requireAuth(request);
-  const { name } = await request.json();
-
-  if (!name) {
-    return new Response(JSON.stringify({ error: "Symbol name required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  // En mode sans authentification, s'assurer que l'utilisateur anonymous existe
-  if (!MUST_BE_AUTHENTICATED && user.userId === "anonymous") {
-    const existingUser = await prisma.user.findUnique({
-      where: { id: "anonymous" },
-    });
-
-    if (!existingUser) {
-      await prisma.user.create({
-        data: {
-          id: "anonymous",
-          email: "anonymous@localhost",
-          password: "no-password", // Pas utilisé en mode sans auth
-          name: "Anonymous User",
-        },
-      });
-    }
-  }
-
-  let symbol = await prisma.symbol.findUnique({ where: { name } });
-
-  if (!symbol) {
-    let enrichmentData = {};
-    try {
-      const details = (await fetchSymbolDetails(name)) as SymbolDetails | null;
-      if (details) {
-        enrichmentData = {
-          sector: details.sector || null,
-          industry: details.industry || null,
-          exchange: details.exchange || null,
-          type: details.type || null,
-        };
-      }
-    } catch (err) {
-      console.warn(`Could not fetch details for ${name}:`, err);
-    }
-
-    symbol = await prisma.symbol.create({
-      data: { name, enabled: true, isPopular: false, ...enrichmentData },
-    });
-  }
-
-  const watchlist = await prisma.watchlist.upsert({
-    where: {
-      userId_symbolId: {
-        userId: user.userId,
-        symbolId: symbol.id,
-      },
-    },
-    update: {},
-    create: {
-      userId: user.userId,
-      symbolId: symbol.id,
-    },
-    include: { symbol: true },
-  });
-
-  cache.clear();
-
-  return new Response(JSON.stringify(watchlist), {
-    status: 201,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-    },
+  // POST/PUT not allowed on /watchlist — endpoint is read-only and cache-backed
+  return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
+    status: 405,
+    headers: { "Content-Type": "application/json" },
   });
 }
 
 async function handleDeleteSymbol(request: Request) {
-  const user = requireAuth(request);
-  const { symbolId } = await request.json();
-
-  if (!symbolId) {
-    return new Response(JSON.stringify({ error: "Symbol ID required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  await prisma.watchlist.delete({
-    where: {
-      userId_symbolId: {
-        userId: user.userId,
-        symbolId,
-      },
-    },
-  });
-
-  cache.clear();
-
+  // DELETE not allowed on /watchlist — endpoint is read-only and cache-backed
   return new Response(null, {
-    status: 204,
+    status: 405,
     headers: { "Access-Control-Allow-Origin": "*" },
   });
 }

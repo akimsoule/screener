@@ -28,5 +28,6 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+package-lock.json
 
 /src/generated/prisma

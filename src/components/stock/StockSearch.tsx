@@ -1,13 +1,12 @@
 import { useState, useEffect } from "react";
-import { getSymbols } from "@/lib/netlifyApi";
-import { Search } from "lucide-react";
-import { RefreshCw } from "lucide-react";
+import { getWatchlist } from "@/lib/netlifyApi";
+import { Search, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 interface StockSearchProps {
-  onSearch: (symbol: string) => void;
-  loading?: boolean;
+  readonly onSearch: (symbol: string) => void;
+  readonly loading?: boolean;
 }
 
 const fallbackPopular = [
@@ -28,13 +27,9 @@ export function StockSearch({ onSearch, loading }: StockSearchProps) {
   async function fetchSymbols() {
     setLoadingSymbols(true);
     try {
-      const data = await getSymbols();
-      if (Array.isArray(data)) {
-        const names = data
-          .filter((s: any) => s && (s.enabled === undefined || s.enabled))
-          .map((s: any) => String(s.name).toUpperCase());
-        if (names.length > 0) setPopularStocks(names.slice(0, 12));
-      }
+      const data = await getWatchlist();
+      const rows = (data?.data || []).map((s: any) => s.name).filter(Boolean);
+      if (rows.length > 0) setPopularStocks(rows.slice(0, 12));
     } catch (e) {
       console.warn("Could not load symbols from backend, using fallback", e);
     } finally {
@@ -46,7 +41,7 @@ export function StockSearch({ onSearch, loading }: StockSearchProps) {
     fetchSymbols();
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (symbol.trim()) {
       onSearch(symbol.trim().toUpperCase());

@@ -8,6 +8,7 @@
     "start": "vite",
     "build": "prisma generate && vite build",
     "seed": "tsx prisma/seed.ts",
+    "batch:symbol": "tsx netlify/app/scripts/run-batch-symbol.ts",
     "build:full": "npm install && npm run build && npx prisma migrate deploy && npx prisma generate && npm run seed",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -43,7 +44,8 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.1",
     "tailwindcss-animate": "^1.0.7",
-    "technicalindicators": "^3.1.0"
+    "technicalindicators": "^3.1.0",
+    "yahoo-finance2": "^3.13.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
