@@ -1,27 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { FRONT_PAGE_LIMIT } from "@/lib/Constant";
-import {
-  RefreshCw,
-  ChevronLeft,
-  ChevronRight,
-  Info,
-  Trash,
-  Copy,
-  Check,
-} from "lucide-react";
+import { RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { deleteSymbol, getWatchlist, refreshCache } from "@/lib/netlifyApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { AnalysisHierarchy } from "./AnalysisHierarchy";
 import { AddSymbolDialog } from "./AddSymbolDialog";
 import type { WatchlistItem, AnalysisReport } from "@/types/stock";
 import { cn } from "@/lib/utils";
