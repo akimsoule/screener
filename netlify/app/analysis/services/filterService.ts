@@ -621,15 +621,30 @@ export class FilterService {
     limit: number;
   }> {
     const page = Math.max(1, Number.parseInt(params.get("page") || "1", 10));
-    const limit = Math.min(
-      100,
-      Math.max(
-        1,
-        Number.parseInt(params.get("limit") || String(SERVER_PAGE_LIMIT), 10),
-      ),
-    );
+    // Enforce a fixed page size on the server to avoid client-side overrides
+    const limit = SERVER_PAGE_LIMIT;
 
-    // Build options
+    // Build options by delegating to a helper to keep cognitive complexity low
+    const options = this.parseOptionsFromParams(params);
+    const scoreMin = this.parseNumber(params, "scoreMin");
+    const scoreMax = this.parseNumber(params, "scoreMax");
+
+    // Validate textual values against available filters when possible
+    try {
+      await this.validateOptionsAgainstAvailable(options);
+    } catch (e) {
+      // Log at debug level and continue
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      logger.debug(
+        "Filter validation failed, continuing without validation:",
+        (e as Error)?.message ?? String(e),
+      );
+    }
+
+    return { options, scoreMin, scoreMax, page, limit };
+  }
+
+  private parseOptionsFromParams(params: URLSearchParams): FilterOptions {
     const options: FilterOptions = {};
 
     const textFilters: Array<keyof FilterOptions> = [
@@ -678,22 +693,7 @@ export class FilterService {
     if (mcMin !== undefined) options.marketCapMin = mcMin;
     if (mcMax !== undefined) options.marketCapMax = mcMax;
 
-    const scoreMin = this.parseNumber(params, "scoreMin");
-    const scoreMax = this.parseNumber(params, "scoreMax");
-
-    // Validate textual values against available filters when possible
-    try {
-      await this.validateOptionsAgainstAvailable(options);
-    } catch (e) {
-      // Log at debug level and continue
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      logger.debug(
-        "Filter validation failed, continuing without validation:",
-        (e as Error)?.message ?? String(e),
-      );
-    }
-
-    return { options, scoreMin, scoreMax, page, limit };
+    return options;
   }
 }
 

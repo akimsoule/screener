@@ -38,19 +38,9 @@ export default function Index() {
   const authRequired = MUST_BE_AUTHENTICATED;
   const effectiveAuth = authRequired ? isAuthenticated : true;
 
-  // Screener reports per page (configurable in UI)
-  const [reportsPerPage, setReportsPerPage] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem("reports-per-page");
-      return saved ? Number(saved) : FRONT_PAGE_LIMIT;
-    } catch {
-      return FRONT_PAGE_LIMIT;
-    }
-  });
-
-  // Pagination
+  // Pagination (fixed page size)
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = reportsPerPage;
+  const itemsPerPage = FRONT_PAGE_LIMIT;
 
   // Search
   const [searchTerm, setSearchTerm] = useState("");
@@ -110,7 +100,7 @@ export default function Index() {
           // Normal mode: fetch server page
           const data = await getWatchlist(
             currentPage,
-            reportsPerPage,
+            FRONT_PAGE_LIMIT,
             filters,
             token,
           );
@@ -126,14 +116,14 @@ export default function Index() {
         }
 
         // Search mode: fetch all pages then filter client-side
-        const first = await getWatchlist(1, reportsPerPage, filters, token);
+        const first = await getWatchlist(1, FRONT_PAGE_LIMIT, filters, token);
         const total = first.pagination?.total || 0;
-        const totalPages = Math.max(1, Math.ceil(total / reportsPerPage));
+        const totalPages = Math.max(1, Math.ceil(total / FRONT_PAGE_LIMIT));
 
         let allItems = first.data || [];
-        const promises = [];
+        const promises = [] as Promise<any>[];
         for (let p = 2; p <= totalPages; p++) {
-          promises.push(getWatchlist(p, reportsPerPage, filters, token));
+          promises.push(getWatchlist(p, FRONT_PAGE_LIMIT, filters, token));
         }
 
         if (promises.length > 0) {
@@ -190,7 +180,7 @@ export default function Index() {
       const filters = undefined;
       const data = await getWatchlist(
         currentPage,
-        reportsPerPage,
+        FRONT_PAGE_LIMIT,
         filters,
         token,
       );
@@ -249,7 +239,7 @@ export default function Index() {
 
         // Recharger la watchlist (fetch page 1)
         const filters = undefined;
-        const data = await getWatchlist(1, reportsPerPage, filters, token);
+        const data = await getWatchlist(1, FRONT_PAGE_LIMIT, filters, token);
         const items: WatchlistItem[] = (data.data || []).map(
           mapServerItemToWatchlistItem,
         );
@@ -575,28 +565,9 @@ export default function Index() {
                   {filtersOpen ? "Hide filters" : "Show filters"}
                 </Button>
                 <div className="ml-3 flex items-center gap-2">
-                  <label
-                    htmlFor="reports-per-page"
-                    className="text-sm text-muted-foreground"
-                  >
-                    Reports:
-                  </label>
-                  <select
-                    id="reports-per-page"
-                    value={String(reportsPerPage)}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setReportsPerPage(v);
-                      localStorage.setItem("reports-per-page", String(v));
-                      setCurrentPage(1);
-                    }}
-                    className="text-sm bg-secondary border-border rounded-md px-2 py-1"
-                  >
-                    <option value="10">10</option>
-                    <option value="20">20</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                  </select>
+                  <div className="text-sm text-muted-foreground">
+                    Reports: 10
+                  </div>
                 </div>
               </div>
               {filtersOpen && (
@@ -796,8 +767,6 @@ export default function Index() {
               exchanges={selectedExchanges}
               types={selectedTypes}
               actions={selectedActions}
-              reportsPerPage={reportsPerPage}
-              itemsPerPage={itemsPerPage}
             />
           </TabsContent>
 

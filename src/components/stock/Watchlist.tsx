@@ -25,7 +25,11 @@ import { AnalysisHierarchy } from "./AnalysisHierarchy";
 import { AddSymbolDialog } from "./AddSymbolDialog";
 import type { WatchlistItem, AnalysisReport } from "@/types/stock";
 import { cn } from "@/lib/utils";
-import { mapItemsToReports, getActionClass, toServerItem } from "./watchlistHelpers";
+import {
+  mapItemsToReports,
+  getActionClass,
+  toServerItem,
+} from "./watchlistHelpers";
 import { ReportsTable } from "./ReportsTable";
 import { ReportsPagination } from "./ReportsPagination";
 
@@ -45,8 +49,8 @@ interface WatchlistProps {
   exchanges?: string[];
   types?: string[];
   actions?: string[];
-  reportsPerPage?: number;
-  itemsPerPage?: number;
+  // Page size fixed to FRONT_PAGE_LIMIT (not configurable)
+  // (reportsPerPage and itemsPerPage removed to enforce a single fixed page size)
   isAuthenticated?: boolean;
   token?: string | null;
 }
@@ -67,8 +71,6 @@ export function Watchlist({
   exchanges = [],
   types = [],
   actions = [],
-  reportsPerPage = FRONT_PAGE_LIMIT,
-  itemsPerPage = FRONT_PAGE_LIMIT,
   isAuthenticated = false,
   token = null,
 }: Readonly<WatchlistProps>) {
@@ -78,35 +80,31 @@ export function Watchlist({
   const [copiedSymbol, setCopiedSymbol] = useState<string | null>(null);
   const { toast } = useToast();
 
-  console.log("Loading watchlist with filters", loadingReports);
-
   // Stabilize filter dependencies to avoid unnecessary re-renders
   const filterKey = useMemo(
     () => JSON.stringify({ sectors, industries, exchanges, types, actions }),
     [sectors, industries, exchanges, types, actions],
   );
 
-  // reportsPerPage is provided by parent (configurable in UI)
   // `reports` contains either the server page results or all results (when searching)
   const filteredReports = reports.filter((r) =>
     r.symbol.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   // If a search is active we compute total pages from the filtered set (client-side pagination).
-  // Otherwise rely on server-provided total count (use itemsPerPage for server pages)
+  // Otherwise rely on server-provided total count. Page size is fixed to FRONT_PAGE_LIMIT.
   const isSearching = searchTerm.trim().length > 0;
-  // page size for server-retrieved report pages vs client-side search pages
-  const pageSizeForReports = reportsPerPage;
+  const pageSizeForReports = FRONT_PAGE_LIMIT;
 
   const totalReportPages = isSearching
-    ? Math.max(1, Math.ceil(filteredReports.length / reportsPerPage))
-    : Math.max(1, Math.ceil((reportsTotal || 0) / reportsPerPage));
+    ? Math.max(1, Math.ceil(filteredReports.length / FRONT_PAGE_LIMIT))
+    : Math.max(1, Math.ceil((reportsTotal || 0) / FRONT_PAGE_LIMIT));
 
   // Paginate client-side when searching, otherwise use the server page already in `reports`
   const paginatedReports = isSearching
     ? filteredReports.slice(
-        (currentPage - 1) * reportsPerPage,
-        currentPage * reportsPerPage,
+        (currentPage - 1) * FRONT_PAGE_LIMIT,
+        currentPage * FRONT_PAGE_LIMIT,
       )
     : reports;
 
@@ -129,12 +127,12 @@ export function Watchlist({
       const fetchAllReports = async () => {
         const first = await getWatchlist(
           1,
-          reportsPerPage,
+          FRONT_PAGE_LIMIT,
           { sectors, industries, exchanges, types, actions },
           token,
         );
         const total = first.pagination?.total || 0;
-        const totalPages = Math.max(1, Math.ceil(total / reportsPerPage));
+        const totalPages = Math.max(1, Math.ceil(total / FRONT_PAGE_LIMIT));
 
         let allReports = first.data || [];
         const promises = [] as Promise<any>[];
@@ -142,7 +140,7 @@ export function Watchlist({
           promises.push(
             getWatchlist(
               p,
-              reportsPerPage,
+              FRONT_PAGE_LIMIT,
               { sectors, industries, exchanges, types, actions },
               token,
             ),
@@ -196,7 +194,7 @@ export function Watchlist({
     return () => {
       cancelled = true;
     };
-  }, [searchTerm, filterKey, reportsPerPage, items, totalItems, token]);
+  }, [searchTerm, filterKey, items, totalItems, token]);
 
   const handleRefresh = useCallback(async () => {
     // Attempt to refresh server memory cache first (optional token header)
@@ -222,7 +220,7 @@ export function Watchlist({
     try {
       const body = await getWatchlist(
         currentPage,
-        reportsPerPage,
+        FRONT_PAGE_LIMIT,
         { sectors, industries, exchanges, types, actions },
         token,
       );
@@ -232,16 +230,7 @@ export function Watchlist({
     } catch (err) {
       console.error("Failed to fetch screener:", err);
     }
-  }, [
-    reportsPerPage,
-    sectors,
-    industries,
-    exchanges,
-    types,
-    actions,
-    onRefresh,
-    token,
-  ]);
+  }, [sectors, industries, exchanges, types, actions, onRefresh, token]);
 
   const handleDeleteSymbol = useCallback(
     async (symbol: string) => {
@@ -256,7 +245,7 @@ export function Watchlist({
         try {
           const body = await getWatchlist(
             currentPage,
-            reportsPerPage,
+            FRONT_PAGE_LIMIT,
             { sectors, industries, exchanges, types, actions },
             token,
           );
@@ -285,7 +274,6 @@ export function Watchlist({
       toast,
       token,
       currentPage,
-      reportsPerPage,
       sectors,
       industries,
       exchanges,
@@ -447,13 +435,17 @@ export function Watchlist({
             <div className="text-sm text-muted-foreground text-center sm:text-left">
               <span className="hidden sm:inline">
                 Showing{" "}
-                {items.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to{" "}
-                {Math.min(currentPage * itemsPerPage, totalItems)} of{" "}
+                {items.length > 0
+                  ? (currentPage - 1) * FRONT_PAGE_LIMIT + 1
+                  : 0}{" "}
+                to {Math.min(currentPage * FRONT_PAGE_LIMIT, totalItems)} of{" "}
                 {totalItems} items
               </span>
               <span className="sm:hidden">
-                {items.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}-
-                {Math.min(currentPage * itemsPerPage, totalItems)} /{" "}
+                {items.length > 0
+                  ? (currentPage - 1) * FRONT_PAGE_LIMIT + 1
+                  : 0}
+                -{Math.min(currentPage * FRONT_PAGE_LIMIT, totalItems)} /{" "}
                 {totalItems}
               </span>
             </div>
