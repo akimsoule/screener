@@ -11,6 +11,40 @@ import {
   SCORE_THRESHOLDS,
   HOLDING_PERIODS,
 } from "../../constants";
+import { logger } from "../../../lib/logger";
+
+/**
+ * Ensure stop is placed on the correct side of the entry.
+ * Returns an adjusted stop if the provided stop is invalid for the given side.
+ */
+function normalizeStop(
+  isLong: boolean,
+  entry: number,
+  stop: number,
+  atr: number,
+  stopAtr: number,
+) {
+  if (isLong) {
+    if (stop >= entry) {
+      const adjusted = entry - atr * stopAtr;
+      logger.warn(
+        `Recommendation: stop >= entry for LONG (entry=${entry.toFixed(2)} stop=${stop.toFixed(2)}) — adjusting stop to ${adjusted.toFixed(2)}`,
+      );
+      return adjusted;
+    }
+    return stop;
+  }
+
+  if (stop <= entry) {
+    const adjusted = entry + atr * stopAtr;
+    logger.warn(
+      `Recommendation: stop <= entry for SHORT (entry=${entry.toFixed(2)} stop=${stop.toFixed(2)}) — adjusting stop to ${adjusted.toFixed(2)}`,
+    );
+    return adjusted;
+  }
+
+  return stop;
+}
 
 /**
  * Construit la recommandation de trade (entrée, sortie, sizing)
@@ -62,10 +96,32 @@ export function buildRecommendation(
     ? TRADE_PARAMS.STOP_ATR_LONG
     : TRADE_PARAMS.STOP_ATR_SHORT;
 
-  const entry = price;
-  const stopLoss = isLong ? price - atr * STOP_ATR : price + atr * STOP_ATR;
-  const risk = Math.abs(entry - stopLoss);
-  const takeProfit = isLong ? entry + risk * baseRR : entry - risk * baseRR;
+  // Use hourly timing optimal entry if provided, otherwise use current price
+  const effectiveEntry = hourlyTiming?.optimalEntry
+    ? Number(hourlyTiming.optimalEntry)
+    : price;
+  const entry = effectiveEntry;
+
+  // Compute stop and take profit based on the chosen entry to keep consistency
+  function computeLevels(
+    isLong: boolean,
+    entry: number,
+    atr: number,
+    baseRR: number,
+    stopAtr: number,
+  ) {
+    let stop = isLong ? entry - atr * stopAtr : entry + atr * stopAtr;
+    stop = normalizeStop(isLong, entry, stop, atr, stopAtr);
+    const risk = Math.abs(entry - stop);
+    const takeProfit = isLong ? entry + risk * baseRR : entry - risk * baseRR;
+    return { stop, risk, takeProfit };
+  }
+
+  const {
+    stop: stopLoss,
+    risk,
+    takeProfit,
+  } = computeLevels(isLong, entry, atr, baseRR, STOP_ATR);
 
   let sizing: null = null;
   let rationale = "";
@@ -80,9 +136,7 @@ export function buildRecommendation(
 
   return {
     side,
-    entry: hourlyTiming?.optimalEntry
-      ? Number(hourlyTiming.optimalEntry.toFixed(2))
-      : Number(entry.toFixed(2)),
+    entry: Number(entry.toFixed(2)),
     stopLoss: Number(stopLoss.toFixed(2)),
     takeProfit: Number(takeProfit.toFixed(2)),
     riskReward: baseRR,

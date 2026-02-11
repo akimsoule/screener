@@ -1,0 +1,106 @@
+✅ Modifications à apporter au fichier scoring.ts
+1. Ajouter les imports nécessaires en haut du fichier
+typescript
+123
+// ===== IMPORTS S/R =====
+import type { OHLC, SupportResistanceAnalysis } from "../../types";
+import { analyzeSupportResistance } from "./support-resistance"; // Module séparé (voir plus bas)
+2. Ajouter la fonction de scoring S/R (corrigée et optimisée)
+typescript
+123456789101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990
+// ===== SCORE SUPPORT / RESISTANCE =====
+
+/**
+ * Score S/R avec détection de cassure et pondération multi-timeframe
+ * @returns { score: number, breakdown: object, flags: string[] }
+ */
+export function scoreSupportResistance(
+  dailyOhlc: OHLC[],
+  weeklyOhlc: OHLC[],
+  price: number,
+
+3. Modifier computeTechnicalScore() pour intégrer le S/R
+typescript
+12345678910111213141516171819202122232425262728293031323334353637383940414243444546474849505152535455565758596061626364656667
+// ===== SCORE TECHNIQUE COMPLET (VERSION AMÉLIORÉE) =====
+
+export function computeTechnicalScore(
+  dailyCloses: number[],
+  dailyHighs: number[],
+  dailyLows: number[],
+  weeklyCloses: number[],
+  price: number,
+  regime: string,
+  dailyOhlc: OHLC[],   // 🔴 NOUVEAU PARAMÈTRE
+
+🔧 Module support-resistance.ts optimisé (à créer dans le même dossier)
+typescript
+1234567891011121314151617181920212223242526272829303132333435363738394041424344454647484950515253545556575859606162636465666768697071727374757677787980818283848586878889909192939495969798
+// support-resistance.ts
+import type { OHLC, SupportResistanceAnalysis, SupportResistanceLevel } from "../../types";
+import { SUPPORT_RESISTANCE } from "../../constants";
+
+// ✅ CORRECTION CRITIQUE : détection O(n) au lieu de O(n²)
+export function detectSwingPoints(
+  ohlc: OHLC[],
+  minBars: number = SUPPORT_RESISTANCE.MIN_SWING_BARS,
+): Array<{ price: number; type: "HIGH" | "LOW"; index: number; volume: number }> {
+  const swings: Array<{ price: number; type: "HIGH" | "LOW"; index: number; volu
+📌 Modifications nécessaires dans analyzeSymbol() (appelant)
+Dans votre fichier principal analyzer.ts, modifiez l'appel à computeTechnicalScore :
+typescript
+12345678910111213141516171819202122
+// AVANT
+const { rawScore, breakdown, riskFlags, ...rest } = computeTechnicalScore(
+  dailyCloses,
+  dailyHighs,
+  dailyLows,
+  weeklyCloses,
+  price,
+  regime,
+);
+
+
+Et ajoutez supportResistance au rapport final :
+typescript
+12345678910
+return {
+  symbol,
+  timestamp: new Date(),
+  // ... autres champs
+  supportResistance, // 🔵 Nouveau champ dans le rapport
+  details: {
+    // ... existant
+    supportResistance: supportResistance?.daily, // Pour affichage rapide
+  },
+};
+✅ Pourquoi cette intégration fonctionne
+Critère
+Solution apportée
+Performance
+Swing detection O(n) au lieu de O(n²) → viable sur 10k+ candles
+Précision
+daysAgo basé sur timestamp réel → pondération récence correcte
+Contexte
+Scoring S/R dépend de action (BUY/SELL) → évite les signaux contradictoires
+Cassures
+Détection isBroken → transforme un support cassé en signal baissier
+Modularité
+Détection S/R dans module séparé → respect de votre architecture
+Transparence
+Flags explicites (NEAR_SUPPORT_DAILY, GAP_STRENGTH_WEEKLY)
+🚀 Résultat dans le rapport final
+json
+123456789101112131415161718192021222324
+{
+  "score": 68,
+  "action": "STRONG BUY",
+  "supportResistance": {
+    "daily": {
+      "nearestSupport": { "price": 182.45, "strength": 87, "isBroken": false },
+      "nearestResistance": { "price": 195.20, "strength": 92, "isBroken": true },
+      "gapStrength": 84,
+      "gapDirection": "BULLISH",
+      "interpretation": "🚀 Résistance 195.20 cassée avec volume → zone vide jusqu'à 215.80 (+10.5%). Momentum haussier confirmé."
+
+Cette intégration transforme votre analyse de purement indicatrice (RSI/MACD) vers une analyse structurelle qui comprend où le prix se situe dans l'architecture du marché — élément critique pour la gestion du risque et le timing d'entrée.

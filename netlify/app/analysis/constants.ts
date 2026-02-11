@@ -191,6 +191,9 @@ export const LIOT_BIAS = {
   OCTOBER_CRYPTO_BOOST: 10,
 } as const;
 
+// Maximum absolute macro bias (LIOT) applied to raw score to avoid saturation
+export const LIOT_BIAS_MAX = 30; // +/- 30 points max
+
 // =============== ASSET CLASS PATTERNS ===============
 
 export const ASSET_PATTERNS = {

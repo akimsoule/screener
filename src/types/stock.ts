@@ -69,17 +69,33 @@ export interface AssetClassBias {
 export interface AnalysisReport {
   symbol: string;
   regime: Regime;
-  rawScore: number;
+  rawScore: number; // Score brut (non normalisé, peut excéder ±100)
   score: number; // normalisé [-100, +100]
-  action: "ACHAT_FORT" | "ACHAT" | "ATTENTE" | "VENTE" | "VENTE_FORTE";
+  action: "🟢 STRONG_BUY" | "🔵 BUY" | "⚪ HOLD" | "🟠 SELL" | "🔴 STRONG_SELL";
   confidence: number; // 0–100
   interpretation: string; // lecture humaine du score
+  // Contexte macro optionnel
+  macroContext?: MacroRegime;
+  liotBias?: number;
+  liotBiasRaw?: number; // Biais macro brut avant clamping
+  // Détails des contributions et métriques techniques
   details: {
     price: number;
     rsi: number;
+    adx?: number;
     trendDaily: string;
     trendWeekly: string;
     atr: number;
+    atrPercent?: number;
+    volatilityRegime?: string;
+    breakdown?: {
+      rsi: number;
+      trend: number;
+      macd: number;
+      bb: number;
+      adx: number;
+      atr: number;
+    };
   };
   recommendation?: {
     side: "LONG" | "SHORT" | "NONE";
@@ -94,7 +110,4 @@ export interface AnalysisReport {
       description: string;
     };
   };
-  // Contexte macro optionnel
-  macroContext?: MacroRegime;
-  liotBias?: number;
 }

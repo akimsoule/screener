@@ -17,11 +17,14 @@ import type {
   VolatilityRegime,
   HourlyTiming,
   SymbolMetadata,
+  OHLC,
 } from "../../types";
 import {
   DATA_REQUIREMENTS,
   REGIME_THRESHOLDS,
   TRADE_PARAMS,
+  SCORE_NORMALIZATION,
+  LIOT_BIAS_MAX,
 } from "../../constants";
 import { logger } from "../../../lib/logger";
 
@@ -52,27 +55,29 @@ async function maybeAnalyzeHourlyTiming(
   action: string,
   price: number,
   isCrypto: boolean,
+  hourlyOhlc?: OHLC[],
 ): Promise<HourlyTiming | undefined> {
   const shouldAnalyzeHourly = Math.abs(score) >= 40;
   if (!shouldAnalyzeHourly) return undefined;
 
   try {
     logger.debug(`🔍 ${symbol} - Score ${score} >= 40, analyse hourly activée`);
-    const hourlyOhlc = await getPrices(symbol, "1h");
+
+    const fetchedHourly = hourlyOhlc ?? (await getPrices(symbol, "1h"));
 
     const minHourly = isCrypto
       ? DATA_REQUIREMENTS.CRYPTO_MIN_HOURLY_CANDLES
       : DATA_REQUIREMENTS.MIN_HOURLY_CANDLES;
 
-    if (hourlyOhlc.length >= minHourly) {
+    if (fetchedHourly.length >= minHourly) {
       const side = action.includes("BUY") ? "LONG" : "SHORT";
-      const timing = analyzeHourlyTiming(hourlyOhlc, price, side);
+      const timing = analyzeHourlyTiming(fetchedHourly, price, side);
       logger.debug(`📊 ${symbol} - Hourly timing: ${timing.recommendation}`);
       return timing;
     }
 
     logger.warn(
-      `⚠️ ${symbol} - Données hourly insuffisantes (${hourlyOhlc.length}/${minHourly})`,
+      `⚠️ ${symbol} - Données hourly insuffisantes (${fetchedHourly.length}/${minHourly})`,
     );
     return undefined;
   } catch (error) {
@@ -92,6 +97,7 @@ async function maybeAnalyzeHourlyTiming(
  * @param metadata - Métadonnées du symbole (type, secteur, industrie, etc.)
  * @returns Rapport d'analyse complet avec recommandations
  */
+/* eslint-disable sonarjs/cognitive-complexity, complexity */
 export async function analyzeSymbol(
   symbol: string,
   riskConfig: Partial<RiskConfig> = {},
@@ -100,11 +106,21 @@ export async function analyzeSymbol(
 ): Promise<AnalysisReport> {
   const config = { ...DEFAULT_RISK_CONFIG, ...riskConfig };
 
-  // Récupération des données OHLC (Daily + Weekly)
-  const [dailyOhlc, weeklyOhlc] = await Promise.all([
+  // Récupération des données OHLC (Daily + Weekly + Hourly tentatively)
+  const [dailyOhlc, weeklyOhlc, hourlyOhlc] = (await Promise.all([
     getPrices(symbol, "1d"),
     getPrices(symbol, "1wk"),
-  ]);
+    (async () => {
+      try {
+        return await getPrices(symbol, "1h");
+      } catch (e) {
+        logger.debug(
+          `ℹ️ ${symbol} - Pas de données hourly disponibles: ${e instanceof Error ? e.message : String(e)}`,
+        );
+        return [] as OHLC[];
+      }
+    })(),
+  ])) as [OHLC[], OHLC[], OHLC[]];
 
   // Détecter le type de symbole
   const symbolType = detectSymbolType(symbol);
@@ -168,6 +184,7 @@ export async function analyzeSymbol(
 
   const {
     rawScore,
+    breakdown,
     riskFlags,
     rsi,
     adx,
@@ -182,25 +199,37 @@ export async function analyzeSymbol(
     weeklyCloses,
     price,
     regime,
+    dailyOhlc, // ✅ OHLC complet (pas juste closes)
+    weeklyOhlc, // ✅ OHLC complet
   );
 
   /* Score final (technique + macro) */
   let liotBias = 0;
+  let liotBiasRaw = 0;
   let finalRawScore = rawScore;
 
   if (macroRegime) {
     const macroFlags = computeMacroRegimeFlags(macroRegime);
     riskFlags.push(...macroFlags);
-    liotBias = calculateLiotBias(symbol, macroRegime, metadata, price);
+    liotBiasRaw = calculateLiotBias(symbol, macroRegime, metadata, price);
+
+    if (Math.abs(liotBiasRaw) > LIOT_BIAS_MAX) {
+      riskFlags.push("LIOT_BIAS_CLAMPED");
+      liotBias = clamp(liotBiasRaw, -LIOT_BIAS_MAX, LIOT_BIAS_MAX);
+    } else {
+      liotBias = liotBiasRaw;
+    }
+
     finalRawScore = rawScore + liotBias;
   }
 
-  const score = normalizeScore(
-    finalRawScore,
-    100, // SCORE_NORMALIZATION.MAX_THEORETICAL
-  );
-  const action = scoreToAction(score);
-  const confidence = Math.abs(score);
+  let score = normalizeScore(finalRawScore);
+  // Flag when raw score exceeds the theoretical maximum (helps debugging / calibration)
+  if (Math.abs(finalRawScore) > SCORE_NORMALIZATION.MAX_THEORETICAL) {
+    riskFlags.push("RAW_SCORE_EXCEEDS_THEORETICAL");
+  }
+  let action = scoreToAction(score);
+  let confidence = Math.abs(score);
 
   let interpretation = interpretScore(score);
   if (macroRegime) {
@@ -230,6 +259,7 @@ export async function analyzeSymbol(
     action,
     price,
     isCrypto,
+    hourlyOhlc,
   );
 
   /* Recommandation */
@@ -276,7 +306,10 @@ export async function analyzeSymbol(
       atr,
       atrPercent,
       volatilityRegime,
+      breakdown,
     },
+    liotBias: liotBias === 0 ? undefined : liotBias,
+    liotBiasRaw: liotBiasRaw === 0 ? undefined : liotBiasRaw,
     recommendation,
     metrics: {
       winRateEstimate: winRateEstimate * 100,
@@ -284,6 +317,5 @@ export async function analyzeSymbol(
       maxAdverseExcursion: atr * TRADE_PARAMS.MAX_ADVERSE_EXCURSION_ATR,
     },
     macroContext: macroRegime,
-    liotBias: liotBias === 0 ? undefined : liotBias,
   };
 }

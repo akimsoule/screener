@@ -20,17 +20,18 @@ import {
   LIOT_BIAS,
   ASSET_PATTERNS,
 } from "../../constants";
+import { OHLC } from "../../../lib/data/provider/types";
 
 // ===== SCORE RSI =====
 
 export function scoreRSI(rsi: number, regime: string): number {
   let score = 0;
   if (regime.includes("TREND")) {
-    if (rsi > RSI_LEVELS.OVERBOUGHT_WEAK) score -= SCORE_WEIGHTS.RSI_OVERBOUGHT;
+    if (rsi > RSI_LEVELS.OVERBOUGHT_WEAK) score += SCORE_WEIGHTS.RSI_OVERBOUGHT;
     else if (rsi < RSI_LEVELS.OVERSOLD_WEAK)
       score += SCORE_WEIGHTS.RSI_OVERSOLD;
   } else if (rsi > RSI_LEVELS.OVERBOUGHT_STRONG) {
-    score -= SCORE_WEIGHTS.RSI_OVERBOUGHT;
+    score += SCORE_WEIGHTS.RSI_OVERBOUGHT;
   } else if (rsi < RSI_LEVELS.OVERSOLD_STRONG) {
     score += SCORE_WEIGHTS.RSI_OVERSOLD;
   }
@@ -198,6 +199,10 @@ export function scoreATR(
 
 // ===== SCORE TECHNIQUE COMPLET =====
 
+// ===== SCORE TECHNIQUE COMPLET (VERSION AMÉLIORÉE) =====
+
+// scoring.ts
+/* eslint-disable-next-line max-params */
 export function computeTechnicalScore(
   dailyCloses: number[],
   dailyHighs: number[],
@@ -205,16 +210,18 @@ export function computeTechnicalScore(
   weeklyCloses: number[],
   price: number,
   regime: string,
+  dailyOhlc: OHLC[], // ✅ OHLC complet
+  weeklyOhlc: OHLC[], // ✅ OHLC complet
+  // ❌ SUPPRIMER 'action' ici → scoring S/R doit être directionnellement neutre
 ) {
   const riskFlags: string[] = [];
 
+  // === Indicateurs existants ===
   const rsi = RSI.calculate({
     values: dailyCloses,
     period: INDICATOR_PERIODS.RSI,
   }).at(-1)!;
-  let rawScore = 0;
-
-  rawScore += scoreRSI(rsi, regime);
+  let rawScore = scoreRSI(rsi, regime);
 
   const trendRes = scoreTrend(dailyCloses, weeklyCloses, rsi, regime);
   rawScore += trendRes.score;
@@ -230,6 +237,14 @@ export function computeTechnicalScore(
 
   return {
     rawScore,
+    breakdown: {
+      rsi: scoreRSI(rsi, regime),
+      trend: trendRes.score,
+      macd: scoreMACD(dailyCloses),
+      bb: scoreBB(dailyCloses, price, rsi, regime, trendRes.trendDaily),
+      adx: adxRes.score,
+      atr: atrRes.score,
+    },
     riskFlags,
     rsi,
     adx: adxRes.adx,

@@ -1,14 +1,23 @@
 import type { AnalysisReport } from "@/types/stock";
 
-export const mapItemsToReports = (items: any[]): AnalysisReport[] =>
-  items.map((s: any) => {
+type SourceItem = {
+  name?: string;
+  lastPrice?: number;
+  analysis?: AnalysisReport;
+  symbol?: string;
+  price?: number;
+  metadata?: Record<string, unknown>;
+};
+
+export const mapItemsToReports = (items: SourceItem[]): AnalysisReport[] =>
+  items.map((s: SourceItem) => {
     if (s.analysis) return s.analysis as AnalysisReport;
     return {
-      symbol: s.name,
+      symbol: s.name ?? "",
       regime: "RANGE",
       rawScore: 0,
       score: 0,
-      action: "ATTENTE",
+      action: "⚪ HOLD",
       confidence: 0,
       interpretation: "",
       details: {
@@ -20,7 +29,6 @@ export const mapItemsToReports = (items: any[]): AnalysisReport[] =>
       },
     } as AnalysisReport;
   });
-
 export const getActionClass = (action?: string) => {
   if (!action) return "bg-secondary text-muted-foreground";
 
@@ -45,7 +53,7 @@ export const getActionClass = (action?: string) => {
   return "bg-secondary text-muted-foreground";
 };
 
-export const toServerItem = (it: any) => ({
+export const toServerItem = (it: SourceItem) => ({
   name: it.symbol,
   lastPrice: it.price,
   analysis: it.analysis ?? undefined,

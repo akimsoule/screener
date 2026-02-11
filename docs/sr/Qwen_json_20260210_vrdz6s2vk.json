@@ -1,0 +1,16 @@
+{
+  "supportResistance": {
+    "levels": [
+      { "price": 182.45, "type": "SUPPORT", "strength": 87, "distancePercent": 0.8, "isSignificant": true },
+      { "price": 195.20, "type": "RESISTANCE", "strength": 92, "distancePercent": 1.2, "isSignificant": true },
+      { "price": 215.80, "type": "RESISTANCE", "strength": 68, "distancePercent": 12.3, "isSignificant": true }
+    ],
+    "nearestSupport": { "price": 182.45, ... },
+    "nearestResistance": { "price": 195.20, ... },
+    "isNearSupport": false,
+    "isNearResistance": true,
+    "gapStrength": 84,
+    "gapDirection": "BULLISH",
+    "interpretation": "🚀 Momentum fort : grande zone vide au-dessus (résistance éloignée à +12%). Potentiel de continuation haussière si breakout 195.20."
+  }
+}

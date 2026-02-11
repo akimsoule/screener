@@ -42,7 +42,7 @@ export const clamp = (v: number, min: number, max: number) =>
 
 export const normalizeScore = (
   raw: number,
-  maxAbs: number = SCORE_NORMALIZATION.MAX_ABS,
+  maxAbs: number = SCORE_NORMALIZATION.MAX_THEORETICAL,
 ) => clamp(Math.round((raw / maxAbs) * 100), -100, 100);
 
 export const scoreToAction = (score: number): AnalysisReport["action"] => {

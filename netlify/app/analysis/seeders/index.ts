@@ -33,6 +33,9 @@ async function processBatch<T, R>(
 }
 
 async function fillMetadata() {
+  console.log("🧹 Cleaning all cache...");
+  await prisma.cache.deleteMany({});
+
   console.log("🧹 Cleaning empty metadata cache...");
   const deletedCache = await prisma.cache.deleteMany({
     where: {

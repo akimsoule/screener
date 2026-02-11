@@ -140,7 +140,7 @@ interface AnalysisReport {
   symbol: string;
   timestamp: Date;
   regime: Regime;
-  rawScore: number; // Score brut [-100, +100]
+  rawScore: number; // Score brut (non normalisé, peut excéder ±100)
   score: number; // Score normalisé
   action: string; // Recommandation textuelle
   confidence: number; // Niveau de confiance [%]

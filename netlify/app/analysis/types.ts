@@ -21,11 +21,11 @@ export type VolatilityRegime = "HIGH" | "LOW" | "NORMAL";
 export interface HourlyTiming {
   momentum: "BULL" | "BEAR" | "NEUTRAL";
   rsi: number;
-  nearSupport: boolean;
-  nearResistance: boolean;
   recommendation: string;
   optimalEntry?: number;
 }
+
+// ===== Support / Resistance =====
 
 export interface RiskConfig {
   maxRiskPerTrade: number; // % du capital (ex: 0.01 = 1%)
@@ -73,6 +73,14 @@ export interface AnalysisReport {
     atr: number;
     atrPercent: number;
     volatilityRegime: VolatilityRegime;
+    breakdown?: {
+      rsi: number;
+      trend: number;
+      macd: number;
+      bb: number;
+      adx: number;
+      atr: number;
+    };
   };
   recommendation: TradeRecommendation;
   metrics: {
@@ -83,6 +91,7 @@ export interface AnalysisReport {
   // Contexte macro optionnel
   macroContext?: MacroRegime;
   liotBias?: number;
+  liotBiasRaw?: number;
 }
 
 export interface AssetClassBias {
