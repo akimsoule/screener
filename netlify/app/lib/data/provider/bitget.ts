@@ -40,7 +40,7 @@ export class BitgetProvider implements DataProvider {
     }
 
     // Supprimer les nombres du symbole de base
-    const cleanSymbol = upper.replace(/\d+/g, "");
+    const cleanSymbol = upper.replaceAll(/\d+/g, "");
 
     // Convertir BTC-USD → BTCUSDT, ETH-EUR → ETHEUR
     return cleanSymbol.replaceAll("-", "").replace(/USD$/, "USDT");
