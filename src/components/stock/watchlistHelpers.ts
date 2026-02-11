@@ -11,7 +11,7 @@ type SourceItem = {
 
 export const mapItemsToReports = (items: SourceItem[]): AnalysisReport[] =>
   items.map((s: SourceItem) => {
-    if (s.analysis) return s.analysis as AnalysisReport;
+    if (s.analysis) return s.analysis;
     return {
       symbol: s.name ?? "",
       regime: "RANGE",
