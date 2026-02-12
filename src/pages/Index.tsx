@@ -24,7 +24,12 @@ import { MacroView } from "@/components/stock/MacroView";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { WatchlistItem } from "@/types/stock";
 import { useToast } from "@/hooks/use-toast";
-import { getWatchlist, getFilters } from "@/lib/netlifyApi";
+import {
+  getWatchlist,
+  getFilters,
+  addSymbol,
+  deleteSymbol,
+} from "@/lib/netlifyApi";
 import { FRONT_PAGE_LIMIT, MUST_BE_AUTHENTICATED } from "@/lib/Constant";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthDialog } from "@/components/auth/AuthDialog";
@@ -121,15 +126,13 @@ export default function Index() {
         const totalPages = Math.max(1, Math.ceil(total / FRONT_PAGE_LIMIT));
 
         let allItems = first.data || [];
-        const promises = [] as Promise<any>[];
+        // Fetch remaining pages sequentially to avoid excessive parallel requests
         for (let p = 2; p <= totalPages; p++) {
-          promises.push(getWatchlist(p, FRONT_PAGE_LIMIT, filters, token));
-        }
-
-        if (promises.length > 0) {
-          const rest = await Promise.all(promises);
-          for (const res of rest) {
+          try {
+            const res = await getWatchlist(p, FRONT_PAGE_LIMIT, filters, token);
             allItems = allItems.concat(res.data || []);
+          } catch (err) {
+            console.warn(`Failed to fetch watchlist page ${p}:`, err);
           }
         }
 
@@ -234,7 +237,6 @@ export default function Index() {
         });
 
         // Ajouter via l'API avec token et symbolType
-        const { addSymbol } = await import("@/lib/netlifyApi");
         await addSymbol(symbol, token, symbolType);
 
         // Recharger la watchlist (fetch page 1)
@@ -290,7 +292,6 @@ export default function Index() {
       }
 
       try {
-        const { deleteSymbol } = await import("@/lib/netlifyApi");
         await deleteSymbol(item.symbolId, token);
 
         setWatchlist((prev) => prev.filter((w) => w.symbol !== symbol));

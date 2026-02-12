@@ -3,8 +3,6 @@ import { filterService, FilterOptions } from "./filterService";
 import type { AnalysisReport } from "../types";
 import { logger } from "../../lib/logger";
 import { SERVER_PAGE_LIMIT } from "../../lib/constants";
-import { analysisService } from "./analysisService";
-import { fetchRealMacroData } from "./macroDataService";
 
 export interface WatchlistItem {
   id: string;
@@ -95,49 +93,17 @@ export class WatchlistService {
       };
     });
 
-    // 3.b) Si des analyses manquent, exécuter une analyse à la volée afin
-    // d'avoir un contenu systématique sur la page (utile au rafraîchissement UI)
+    // 3.b) Analyses : non prises en charge par ce service
+    // Les analyses à la volée sont coûteuses en CPU / DB et sont exécutées ailleurs.
+    // Ici, nous limitons le service à l'agrégation et lecture du cache uniquement.
     const missing = enriched
       .filter((e) => !e.analysis)
       .map((e) => e.symbolRow.name);
 
     if (missing.length > 0) {
-      try {
-        // Récupérer le contexte macro une seule fois
-        const realMacro = await fetchRealMacroData();
-        const { _metadata, ...marketData } = realMacro;
-        const vixValue = (_metadata as any)?.vix ?? 0;
-
-        // Analyser les symboles manquants en parallèle (non bloquant si erreurs)
-        const results = await Promise.allSettled(
-          missing.map((sym) =>
-            analysisService.analyzeSymbolWithMacro(sym, marketData as any, {
-              riskConfig: { vixValue },
-            }),
-          ),
-        );
-
-        // Injecter les analyses réussies dans la liste enrichie
-        results.forEach((res, idx) => {
-          if (res.status === "fulfilled") {
-            const symbol = missing[idx];
-            const found = enriched.find((e) => e.symbolRow.name === symbol);
-            if (found) {
-              found.analysis = res.value as AnalysisReport;
-              found.score = (res.value as any).score ?? 0;
-              // cacheKey will be set by the analysisService which writes the cache
-            }
-          } else {
-            logger.warn(
-              `⚠️ Analyse provisoire échouée pour ${missing[idx]}: ${String(res.reason)}`,
-            );
-          }
-        });
-      } catch (err) {
-        logger.warn(
-          `⚠️ Analyse à la volée échouée: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+      logger.info(
+        `Skipping on-the-fly analysis for ${missing.length} symbols in WatchlistService`,
+      );
     }
 
     // 4) Trier l'ensemble par |score| desc, tie-breaker score desc

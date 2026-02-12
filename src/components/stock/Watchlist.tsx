@@ -118,22 +118,19 @@ export function Watchlist({
         const totalPages = Math.max(1, Math.ceil(total / FRONT_PAGE_LIMIT));
 
         let allReports = first.data || [];
-        const promises = [] as Promise<any>[];
+        // Fetch remaining pages sequentially to avoid high concurrency and DB connection spikes
         for (let p = 2; p <= totalPages; p++) {
-          promises.push(
-            getWatchlist(
+          try {
+            const res = await getWatchlist(
               p,
               FRONT_PAGE_LIMIT,
               { sectors, industries, exchanges, types, actions },
               token,
-            ),
-          );
-        }
-
-        if (promises.length > 0) {
-          const rest = await Promise.all(promises);
-          for (const res of rest) {
+            );
             allReports = allReports.concat(res.data || []);
+          } catch (err) {
+            console.warn(`Failed to fetch watchlist page ${p}:`, err);
+            // continue fetching remaining pages
           }
         }
 
@@ -147,6 +144,28 @@ export function Watchlist({
         const isSearching = searchTerm.trim().length > 0;
 
         if (!isSearching) {
+          // If the parent provided more items than a single page (likely leftover from a previous search),
+          // don't trust the provided list — fetch the current server page instead so pagination is respected.
+          if (items && items.length > FRONT_PAGE_LIMIT) {
+            try {
+              const body = await getWatchlist(
+                currentPage,
+                FRONT_PAGE_LIMIT,
+                { sectors, industries, exchanges, types, actions },
+                token,
+              );
+              if (cancelled) return;
+              const fetchedReports = body.data || [];
+              setReports(mapItemsToReports(fetchedReports));
+              setReportsTotal(body.pagination?.total || fetchedReports.length);
+            } catch (err) {
+              console.error("Failed to fetch page after search cleared:", err);
+              // Fall back to using provided items if fetch fails
+              if (!cancelled) setFromItems(items);
+            }
+            return;
+          }
+
           if (items && items.length > 0) {
             setFromItems(items);
             return;
@@ -177,7 +196,7 @@ export function Watchlist({
     return () => {
       cancelled = true;
     };
-  }, [searchTerm, filterKey, items, totalItems, token]);
+  }, [searchTerm, filterKey, items, totalItems, token, currentPage]);
 
   const handleRefresh = useCallback(async () => {
     // Attempt to refresh server memory cache first (optional token header)
