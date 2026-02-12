@@ -4,6 +4,7 @@ import { logger } from "../../lib/logger";
 import { SERVER_PAGE_LIMIT } from "../../lib/constants";
 
 export interface FilterOptions {
+  query?: string;
   symbolType?: string | string[];
   isPopular?: boolean;
   exchange?: string | string[];
@@ -129,6 +130,13 @@ export class FilterService {
       where.lastAction = Array.isArray(options.action)
         ? { in: options.action }
         : options.action;
+    }
+
+    if (options.query) {
+      where.name = {
+        contains: options.query.toUpperCase(),
+        mode: "insensitive",
+      };
     }
 
     return where;
@@ -648,6 +656,7 @@ export class FilterService {
     const options: FilterOptions = {};
 
     const textFilters: Array<keyof FilterOptions> = [
+      "query",
       "exchange",
       "sector",
       "industry",

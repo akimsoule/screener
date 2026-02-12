@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   TrendingUp,
   Activity,
@@ -34,6 +34,28 @@ import { FRONT_PAGE_LIMIT, MUST_BE_AUTHENTICATED } from "@/lib/Constant";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthDialog } from "@/components/auth/AuthDialog";
 
+// Helper: map API watchlist item -> local WatchlistItem (extracted to avoid recreation)
+const mapServerItemToWatchlistItem = (s: any): WatchlistItem => ({
+  symbol: s.name,
+  name: s.metadata?.name || s.name,
+  price: s.lastPrice ?? 0,
+  change: 0,
+  changePercent: 0,
+  sector: s.metadata?.data?.sector || s.metadata?.sector || s.sector || null,
+  industry:
+    s.metadata?.data?.industry || s.metadata?.industry || s.industry || null,
+  exchange:
+    s.metadata?.data?.exchange || s.metadata?.exchange || s.exchange || null,
+  type: s.symbolType || s.type || null,
+  action: s.lastAction ?? s.action ?? null,
+  // preserve full analysis object when provided by server
+  analysis: s.analysis ?? null,
+  isPopular: s.isPopular ?? false,
+  inWatchlist: s.inWatchlist ?? true,
+  symbolId: s.id,
+  symbolType: s.symbolType,
+});
+
 export default function Index() {
   const { toast } = useToast();
   const { user, token, logout, isAuthenticated } = useAuth();
@@ -64,85 +86,47 @@ export default function Index() {
   // Total items on server (used for server-backed pagination)
   const [watchlistTotal, setWatchlistTotal] = useState(0);
 
-  // Helper: map API watchlist item -> local WatchlistItem
-  const mapServerItemToWatchlistItem = (s: any): WatchlistItem => ({
-    symbol: s.name,
-    name: s.metadata?.name || s.name,
-    price: s.lastPrice ?? 0,
-    change: 0,
-    changePercent: 0,
-    sector: s.metadata?.data?.sector || s.metadata?.sector || s.sector || null,
-    industry:
-      s.metadata?.data?.industry || s.metadata?.industry || s.industry || null,
-    exchange:
-      s.metadata?.data?.exchange || s.metadata?.exchange || s.exchange || null,
-    type: s.symbolType || s.type || null,
-    action: s.lastAction ?? s.action ?? null,
-    // preserve full analysis object when provided by server
-    analysis: s.analysis ?? null,
-    isPopular: s.isPopular ?? false,
-    inWatchlist: s.inWatchlist ?? true,
-    symbolId: s.id,
-    symbolType: s.symbolType,
-  });
-  // Load watchlist data from API (supports server pagination & search)
-  useEffect(() => {
-    let cancelled = false;
-
-    const filters = {
+  // Memoize filters to avoid recreation on every render
+  const filters = useMemo(
+    () => ({
+      query: searchTerm || undefined,
       sectors: selectedSectors.length ? selectedSectors : undefined,
       industries: selectedIndustries.length ? selectedIndustries : undefined,
       exchanges: selectedExchanges.length ? selectedExchanges : undefined,
       types: selectedTypes.length ? selectedTypes : undefined,
       actions: selectedActions.length ? selectedActions : undefined,
-    } as any;
+    }),
+    [
+      searchTerm,
+      selectedSectors,
+      selectedIndustries,
+      selectedExchanges,
+      selectedTypes,
+      selectedActions,
+    ],
+  );
+
+  // Load watchlist data from API (supports server pagination & search)
+  useEffect(() => {
+    let cancelled = false;
 
     const loadWatchlist = async () => {
       try {
-        const isSearching = searchTerm.trim().length > 0;
+        // Use server-side filtering for both normal and search modes
+        const data = await getWatchlist(
+          currentPage,
+          FRONT_PAGE_LIMIT,
+          filters,
+          token,
+        );
+        if (cancelled) return;
 
-        if (!isSearching) {
-          // Normal mode: fetch server page
-          const data = await getWatchlist(
-            currentPage,
-            FRONT_PAGE_LIMIT,
-            filters,
-            token,
-          );
-          if (cancelled) return;
+        const items: WatchlistItem[] = (data.data || []).map(
+          mapServerItemToWatchlistItem,
+        );
 
-          const items: WatchlistItem[] = (data.data || []).map(
-            mapServerItemToWatchlistItem,
-          );
-
-          setWatchlist(items);
-          setWatchlistTotal(data.pagination?.total || items.length);
-          return;
-        }
-
-        // Search mode: fetch all pages then filter client-side
-        const first = await getWatchlist(1, FRONT_PAGE_LIMIT, filters, token);
-        const total = first.pagination?.total || 0;
-        const totalPages = Math.max(1, Math.ceil(total / FRONT_PAGE_LIMIT));
-
-        let allItems = first.data || [];
-        // Fetch remaining pages sequentially to avoid excessive parallel requests
-        for (let p = 2; p <= totalPages; p++) {
-          try {
-            const res = await getWatchlist(p, FRONT_PAGE_LIMIT, filters, token);
-            allItems = allItems.concat(res.data || []);
-          } catch (err) {
-            console.warn(`Failed to fetch watchlist page ${p}:`, err);
-          }
-        }
-
-        if (!cancelled) {
-          const items: WatchlistItem[] = (allItems || []).map(
-            mapServerItemToWatchlistItem,
-          );
-          setWatchlist(items);
-          setWatchlistTotal(total);
-        }
+        setWatchlist(items);
+        setWatchlistTotal(data.pagination?.total || items.length);
       } catch (error) {
         console.error("Failed to load watchlist:", error);
         toast({
@@ -158,42 +142,34 @@ export default function Index() {
     return () => {
       cancelled = true;
     };
-    // include filters + page + searchTerm so changing them refetches
-  }, [
-    token,
-    currentPage,
-    selectedSectors,
-    selectedIndustries,
-    selectedExchanges,
-    selectedTypes,
-    selectedActions,
-    searchTerm,
-  ]);
-
+    // include filters + page + token so changing them refetches
+  }, [filters, currentPage, token]);
+  // Helper function to reload watchlist (avoids code duplication)
+  const reloadWatchlist = useCallback(
+    async (page: number = 1, filtersToUse?: any) => {
+      const data = await getWatchlist(
+        page,
+        FRONT_PAGE_LIMIT,
+        filtersToUse,
+        token,
+      );
+      const items: WatchlistItem[] = (data.data || []).map(
+        mapServerItemToWatchlistItem,
+      );
+      setWatchlist(items);
+      setWatchlistTotal(data.pagination?.total || items.length);
+      return items;
+    },
+    [token],
+  );
   const handleRefreshWatchlist = useCallback(async () => {
-    if (watchlist.length === 0) return;
-
     try {
       toast({
         title: "Refreshing watchlist",
         description: "Refreshing watchlist data (prices disabled)",
       });
 
-      // Reload watchlist metadata from API (fetch current server page)
-      const filters = undefined;
-      const data = await getWatchlist(
-        currentPage,
-        FRONT_PAGE_LIMIT,
-        filters,
-        token,
-      );
-      const items: WatchlistItem[] = (data.data || []).map(
-        mapServerItemToWatchlistItem,
-      );
-
-      // Update items and server total
-      setWatchlist(items);
-      setWatchlistTotal(data.pagination?.total || items.length);
+      await reloadWatchlist(currentPage);
 
       toast({
         title: "Watchlist refreshed",
@@ -207,7 +183,7 @@ export default function Index() {
         variant: "destructive",
       });
     }
-  }, [watchlist, toast]);
+  }, [currentPage, reloadWatchlist, toast]);
 
   const handleAddToWatchlist = useCallback(
     async (symbol: string, symbolType?: string) => {
@@ -240,16 +216,7 @@ export default function Index() {
         await addSymbol(symbol, token, symbolType);
 
         // Recharger la watchlist (fetch page 1)
-        const filters = undefined;
-        const data = await getWatchlist(1, FRONT_PAGE_LIMIT, filters, token);
-        const items: WatchlistItem[] = (data.data || []).map(
-          mapServerItemToWatchlistItem,
-        );
-
-        // Quotes disabled — set watchlist items and update server total
-        setWatchlist(items);
-        setWatchlistTotal(data.pagination?.total || items.length);
-
+        await reloadWatchlist(1);
         setCurrentPage(1);
 
         toast({
@@ -268,7 +235,7 @@ export default function Index() {
         });
       }
     },
-    [watchlist, authRequired, isAuthenticated, token, toast],
+    [authRequired, isAuthenticated, token, toast, reloadWatchlist],
   );
 
   const handleRemoveFromWatchlist = useCallback(

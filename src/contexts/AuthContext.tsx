@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 
 interface User {
@@ -20,7 +20,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -93,20 +93,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("auth-user");
   };
 
+  const contextValue = useMemo(
+    () => ({
+      user,
+      token,
+      login,
+      signup,
+      logout,
+      isAuthenticated: !!user,
+      isLoading,
+    }),
+    [user, token, login, signup, logout, isLoading],
+  );
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        login,
-        signup,
-        logout,
-        isAuthenticated: !!user,
-        isLoading,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
   );
 }
 

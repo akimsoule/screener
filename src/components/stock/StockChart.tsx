@@ -13,14 +13,14 @@ import type { StockCandle } from "@/types/stock";
 import { format } from "date-fns";
 
 interface StockChartProps {
-  data: StockCandle[];
-  showMA20?: boolean;
-  showMA50?: boolean;
-  showVolume?: boolean;
-  yDomain?: { min?: number; max?: number };
-  yPadding?: number; // fraction of span to pad top/bottom (default 0.1)
-  priceFlex?: number; // flex value for the price chart area (default 1 -> grows normally)
-  yTickCount?: number; // number of Y ticks (default 4) to increase spacing between grid lines
+  readonly data: StockCandle[];
+  readonly showMA20?: boolean;
+  readonly showMA50?: boolean;
+  readonly showVolume?: boolean;
+  readonly yDomain?: { min?: number; max?: number };
+  readonly yPadding?: number; // fraction of span to pad top/bottom (default 0.1)
+  readonly priceFlex?: number; // flex value for the price chart area (default 1 -> grows normally)
+  readonly yTickCount?: number; // number of Y ticks (default 4) to increase spacing between grid lines
 }
 
 // Calculate Simple Moving Average
@@ -90,7 +90,7 @@ export function StockChart({
     }
 
     const num = typeof value === "number" ? value : Number(value);
-    if (!isFinite(num)) return ["-", labels[name] || name];
+    if (!Number.isFinite(num)) return ["-", labels[name] || name];
     return [`$${num.toFixed(2)}`, labels[name] || name];
   };
   const chartData = useMemo(() => {

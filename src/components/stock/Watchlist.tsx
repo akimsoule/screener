@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { FRONT_PAGE_LIMIT } from "@/lib/Constant";
 import { RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -8,11 +8,7 @@ import { Button } from "@/components/ui/button";
 import { AddSymbolDialog } from "./AddSymbolDialog";
 import type { WatchlistItem, AnalysisReport } from "@/types/stock";
 import { cn } from "@/lib/utils";
-import {
-  mapItemsToReports,
-  getActionClass,
-  toServerItem,
-} from "./watchlistHelpers";
+import { mapItemsToReports, getActionClass } from "./watchlistHelpers";
 import { ReportsTable } from "./ReportsTable";
 import { ReportsPagination } from "./ReportsPagination";
 
@@ -63,132 +59,50 @@ export function Watchlist({
   const [copiedSymbol, setCopiedSymbol] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Stabilize filter dependencies to avoid unnecessary re-renders
-  const filterKey = useMemo(
-    () => JSON.stringify({ sectors, industries, exchanges, types, actions }),
-    [sectors, industries, exchanges, types, actions],
-  );
-
-  // `reports` contains either the server page results or all results (when searching)
-  const filteredReports = reports.filter((r) =>
-    r.symbol.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-
-  // If a search is active we compute total pages from the filtered set (client-side pagination).
-  // Otherwise rely on server-provided total count. Page size is fixed to FRONT_PAGE_LIMIT.
-  const isSearching = searchTerm.trim().length > 0;
+  // Page size is fixed to FRONT_PAGE_LIMIT
   const pageSizeForReports = FRONT_PAGE_LIMIT;
+  const totalReportPages = Math.max(
+    1,
+    Math.ceil((reportsTotal || 0) / FRONT_PAGE_LIMIT),
+  );
 
-  const totalReportPages = isSearching
-    ? Math.max(1, Math.ceil(filteredReports.length / FRONT_PAGE_LIMIT))
-    : Math.max(1, Math.ceil((reportsTotal || 0) / FRONT_PAGE_LIMIT));
-
-  // Paginate client-side when searching, otherwise use the server page already in `reports`
-  const paginatedReports = isSearching
-    ? filteredReports.slice(
-        (currentPage - 1) * FRONT_PAGE_LIMIT,
-        currentPage * FRONT_PAGE_LIMIT,
-      )
-    : reports;
+  // Reports come pre-paginated from server
+  const paginatedReports = reports;
 
   // Load paginated reports when items change
-
   useEffect(() => {
     let cancelled = false;
 
     const loadReports = async () => {
       setLoadingReports(true);
-      let keepLoading = false;
-
-      const setFromItems = (srcItems: any[]) => {
-        if (cancelled) return;
-        const initialForMap = srcItems.map(toServerItem);
-        setReports(mapItemsToReports(initialForMap));
-        setReportsTotal(totalItems || initialForMap.length);
-      };
-
-      const fetchAllReports = async () => {
-        const first = await getWatchlist(
-          1,
-          FRONT_PAGE_LIMIT,
-          { sectors, industries, exchanges, types, actions },
-          token,
-        );
-        const total = first.pagination?.total || 0;
-        const totalPages = Math.max(1, Math.ceil(total / FRONT_PAGE_LIMIT));
-
-        let allReports = first.data || [];
-        // Fetch remaining pages sequentially to avoid high concurrency and DB connection spikes
-        for (let p = 2; p <= totalPages; p++) {
-          try {
-            const res = await getWatchlist(
-              p,
-              FRONT_PAGE_LIMIT,
-              { sectors, industries, exchanges, types, actions },
-              token,
-            );
-            allReports = allReports.concat(res.data || []);
-          } catch (err) {
-            console.warn(`Failed to fetch watchlist page ${p}:`, err);
-            // continue fetching remaining pages
-          }
-        }
-
-        if (!cancelled) {
-          setReports(mapItemsToReports(allReports));
-          setReportsTotal(total);
-        }
-      };
 
       try {
-        const isSearching = searchTerm.trim().length > 0;
+        // Use server-side filtering for both normal and search modes
+        const filters = {
+          query: searchTerm || undefined,
+          sectors: sectors.length ? sectors : undefined,
+          industries: industries.length ? industries : undefined,
+          exchanges: exchanges.length ? exchanges : undefined,
+          types: types.length ? types : undefined,
+          actions: actions.length ? actions : undefined,
+        };
 
-        if (!isSearching) {
-          // If the parent provided more items than a single page (likely leftover from a previous search),
-          // don't trust the provided list — fetch the current server page instead so pagination is respected.
-          if (items && items.length > FRONT_PAGE_LIMIT) {
-            try {
-              const body = await getWatchlist(
-                currentPage,
-                FRONT_PAGE_LIMIT,
-                { sectors, industries, exchanges, types, actions },
-                token,
-              );
-              if (cancelled) return;
-              const fetchedReports = body.data || [];
-              setReports(mapItemsToReports(fetchedReports));
-              setReportsTotal(body.pagination?.total || fetchedReports.length);
-            } catch (err) {
-              console.error("Failed to fetch page after search cleared:", err);
-              // Fall back to using provided items if fetch fails
-              if (!cancelled) setFromItems(items);
-            }
-            return;
-          }
+        const body = await getWatchlist(
+          currentPage,
+          FRONT_PAGE_LIMIT,
+          filters,
+          token,
+        );
 
-          if (items && items.length > 0) {
-            setFromItems(items);
-            return;
-          }
+        if (cancelled) return;
 
-          // If items are empty, keep loading until parent provides them
-          if (!items || items.length === 0) {
-            keepLoading = true;
-            return;
-          }
-
-          // Fallback empty
-          setReports([]);
-          setReportsTotal(0);
-          return;
-        }
-
-        // Search mode
-        await fetchAllReports();
+        const fetchedReports = body.data || [];
+        setReports(mapItemsToReports(fetchedReports));
+        setReportsTotal(body.pagination?.total || fetchedReports.length);
       } catch (err) {
         console.error("Failed to fetch screener:", err);
       } finally {
-        if (!cancelled && !keepLoading) setLoadingReports(false);
+        if (!cancelled) setLoadingReports(false);
       }
     };
 
@@ -196,7 +110,16 @@ export function Watchlist({
     return () => {
       cancelled = true;
     };
-  }, [searchTerm, filterKey, items, totalItems, token, currentPage]);
+  }, [
+    searchTerm,
+    sectors,
+    industries,
+    exchanges,
+    types,
+    actions,
+    token,
+    currentPage,
+  ]);
 
   const handleRefresh = useCallback(async () => {
     // Attempt to refresh server memory cache first (optional token header)
@@ -232,7 +155,17 @@ export function Watchlist({
     } catch (err) {
       console.error("Failed to fetch screener:", err);
     }
-  }, [sectors, industries, exchanges, types, actions, onRefresh, token]);
+  }, [
+    sectors,
+    industries,
+    exchanges,
+    types,
+    actions,
+    onRefresh,
+    token,
+    toast,
+    currentPage,
+  ]);
 
   const handleDeleteSymbol = useCallback(
     async (symbol: string) => {
@@ -280,11 +213,12 @@ export function Watchlist({
       industries,
       exchanges,
       types,
+      actions,
       onPageChange,
     ],
   );
 
-  const formatRecommendationLong = (r: AnalysisReport) => {
+  const formatRecommendationLong = useCallback((r: AnalysisReport) => {
     const rec = r.recommendation;
     if (!rec) return "";
 
@@ -364,7 +298,7 @@ export function Watchlist({
     ];
 
     return lines.join("\n");
-  };
+  }, []);
 
   const handleCopyRecommendation = useCallback(
     async (r: AnalysisReport) => {
@@ -479,27 +413,41 @@ export function Watchlist({
       )}
 
       {/* filter reports by searchTerm */}
-      {(reportsTotal > 0 || loadingReports) && (
+      {(reportsTotal >= 0 || loadingReports) && (
         <div className="p-3">
           <h3 className="text-sm font-medium mb-2">Screener Reports</h3>
-          {loadingReports ? (
-            <div className="flex items-center justify-center py-8">
-              <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">
-                Chargement en cours ...
-              </span>
-            </div>
-          ) : (
-            <ReportsTable
-              reports={paginatedReports}
-              isAuthenticated={isAuthenticated}
-              getActionClass={getActionClass}
-              handleDeleteSymbol={handleDeleteSymbol}
-              handleCopyRecommendation={handleCopyRecommendation}
-              copiedSymbol={copiedSymbol}
-              formatRecommendationLong={formatRecommendationLong}
-            />
-          )}
+          {(() => {
+            if (loadingReports) {
+              return (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    Chargement en cours ...
+                  </span>
+                </div>
+              );
+            } else if (reportsTotal === 0) {
+              return (
+                <div className="flex items-center justify-center py-8">
+                  <span className="text-sm text-muted-foreground">
+                    Aucun résultat
+                  </span>
+                </div>
+              );
+            } else {
+              return (
+                <ReportsTable
+                  reports={paginatedReports}
+                  isAuthenticated={isAuthenticated}
+                  getActionClass={getActionClass}
+                  handleDeleteSymbol={handleDeleteSymbol}
+                  handleCopyRecommendation={handleCopyRecommendation}
+                  copiedSymbol={copiedSymbol}
+                  formatRecommendationLong={formatRecommendationLong}
+                />
+              );
+            }
+          })()}
 
           <ReportsPagination
             currentPage={currentPage}

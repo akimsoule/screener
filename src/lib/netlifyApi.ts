@@ -37,6 +37,7 @@ export async function getFilters(token?: string | null) {
 
 // Watchlist API (remplace getSymbols / screener)
 export type ScreenerFilters = {
+  query?: string;
   sectors?: string[];
   industries?: string[];
   exchanges?: string[];
@@ -49,6 +50,11 @@ function applyScreenerFilters(
   filters?: ScreenerFilters,
 ) {
   if (!filters) return;
+
+  if (filters.query) {
+    params.set("query", filters.query);
+  }
+
   const setIf = (key: string, arr?: string[]) => {
     if (arr && arr.length > 0) params.set(key, arr.join(","));
   };
